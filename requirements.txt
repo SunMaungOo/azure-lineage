@@ -1,0 +1,6 @@
+azure-identity
+azure-mgmt-datafactory
+sqlglot
+python-dateutil
+python-decouple
+azure-synapse-artifacts
