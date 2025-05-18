@@ -433,66 +433,6 @@ def to_open_lineage(namespace:str,producer:str,pipeline_lineage:PipelineLineage)
 
     return (start_job_event,complete_job_event)
 
-        
-    """
-    job = {
-        "namespace": namespace,
-        "name": pipeline_lineage.pipeline_name,
-        "run": {
-            "runId": str(uuid.uuid4()),
-            "startTime": datetime.now().isoformat(),
-            "endTime": datetime.now().isoformat(),
-            "status": "COMPLETED",
-            "facets": {}
-        },
-        "inputs": [],
-        "outputs": []
-    }
-
-    for edge in pipeline_lineage.lineage:
-        
-        # when there is no node
-        if len(edge.parent_nodes)==0:
-
-            output_dataset = {
-                "namespace": namespace,
-                "name": edge.node_name,
-                "facets": {
-                    "dataSource": {"namespace": namespace},
-                    "schema": {},
-                    "storageDatasetFacet": {
-                        "isSource": True  # Mark as source dataset
-                    }
-                }
-            }  
-
-            job["outputs"].append(output_dataset)
-
-
-        else:
-            
-            for x in edge.parent_nodes:
-                input_dataset = {
-                    "namespace": namespace,
-                    "name": x
-                }
-
-                job["inputs"].append(input_dataset)
-
-            output_dataset = {
-                "namespace": namespace,
-                "name": edge.node_name
-            }
-
-            job["outputs"].append(output_dataset)
-
-    return {
-        "eventType": "JOB_START",
-        "eventTime": datetime.now().isoformat(),
-        "job": job
-    }
-    """
-
 
 def main():
 
