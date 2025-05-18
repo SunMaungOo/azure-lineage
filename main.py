@@ -1,4 +1,4 @@
-from typing import Dict,List,Set,Optional,Any
+from typing import Dict,List,Set,Optional,Any,Tuple
 from copy import deepcopy
 from lineage import get_sql_lineage
 from graph import Edge,merge_edge
@@ -21,7 +21,7 @@ from model import (
 )
 from connector import get_sql_script,get_dataset_type,get_dataset_info
 from client import AzureClient
-from config import get_api_client,DAYS_SEARCH,OPENLINEAGE_NAMESPACE,OUTPUT_FILE_NAME
+from config import get_api_client,DAYS_SEARCH,OPENLINEAGE_NAMESPACE,OUTPUT_FILE_NAME,OPENLINEAGE_PRODUCER
 import uuid
 from datetime import datetime
 import json
@@ -342,8 +342,99 @@ def get_pipeline_table_lineage(client:AzureClient,
     
     return lineage
 
-def to_open_lineage(namespace:str,pipeline_lineage:PipelineLineage)->Dict[str,Any]:
+def to_open_lineage(namespace:str,producer:str,pipeline_lineage:PipelineLineage)->Tuple[Dict[str,Any],Dict[str,Any]]:
     
+    start_time = datetime.now().isoformat()
+
+    end_time = datetime.now().isoformat()
+
+    run_id = str(uuid.uuid4())
+
+    start_job_event = {
+        "eventType":"START",
+        "eventTime":start_time,
+        "producer":producer,
+        "run": {
+            "runId": run_id
+        },
+        "job":{
+            "namespace": namespace,
+            "name": pipeline_lineage.pipeline_name,
+        },
+        "inputs": [],
+        "outputs": []
+    }
+
+    complete_job_event = {
+        "eventType":"COMPLETE",
+        "eventTime":end_time,
+        "producer":producer,
+        "run": {
+            "runId": run_id
+        },
+        "job":{
+            "namespace": namespace,
+            "name": pipeline_lineage.pipeline_name,
+        },
+        "inputs": [],
+        "outputs": []
+ 
+    }
+
+    for edge in pipeline_lineage.lineage:
+        # when there is no node
+        if len(edge.parent_nodes)==0:
+
+            output_dataset = {
+                "namespace": namespace,
+                "name": edge.node_name,
+                "facets": {
+                    "dataSource": {
+                         "_producer": producer,
+                         "_schemaURL": "https://openlineage.io/spec/facets/1-0-0/DataSourceDatasetFacet.json",
+                         "name":pipeline_lineage.pipeline_name,
+                         "uri": "https://openlineage.io/spec/facets/1-0-0/DataSourceDatasetFacet.json"
+                    },
+                    "schema": {
+                         "_producer": producer,
+                         "_schemaURL": "https://openlineage.io/spec/facets/1-0-0/DataSourceDatasetFacet.json"
+                    },
+                    "storageDatasetFacet": {
+                        "_producer": producer,
+                        "_schemaURL": "https://openlineage.io/spec/facets/1-0-0/DataSourceDatasetFacet.json",
+                        "isSource": True  # Mark as source dataset
+                    }
+                }
+            }  
+
+            start_job_event["outputs"].append(output_dataset)
+            complete_job_event["outputs"].append(output_dataset)
+
+
+        else:
+
+            for x in edge.parent_nodes:
+                input_dataset = {
+                    "namespace": namespace,
+                    "name": x
+                }
+
+                start_job_event["inputs"].append(input_dataset)
+                complete_job_event["outputs"].append(input_dataset)
+
+
+            output_dataset = {
+                "namespace": namespace,
+                "name": edge.node_name
+            }
+
+            start_job_event["outputs"].append(output_dataset)
+            complete_job_event["outputs"].append(output_dataset)
+
+    return (start_job_event,complete_job_event)
+
+        
+    """
     job = {
         "namespace": namespace,
         "name": pipeline_lineage.pipeline_name,
@@ -400,6 +491,7 @@ def to_open_lineage(namespace:str,pipeline_lineage:PipelineLineage)->Dict[str,An
         "eventTime": datetime.now().isoformat(),
         "job": job
     }
+    """
 
 
 def main():
@@ -443,7 +535,15 @@ def main():
 
             processed_pipeline.add(pipeline_run.pipeline_name)
 
-    openlineage = [to_open_lineage(namespace=OPENLINEAGE_NAMESPACE,pipeline_lineage=x) for x in pipeline_lineage]
+    openlineage:List[Dict[str,Any]] = list()
+
+    for x in pipeline_lineage:
+
+        (start_event,complete_event) = to_open_lineage(namespace=OPENLINEAGE_NAMESPACE,producer=OPENLINEAGE_PRODUCER,pipeline_lineage=x)
+
+        openlineage.append(start_event)
+        openlineage.append(complete_event)
+
 
     with open(OUTPUT_FILE_NAME,"w") as file:
         json.dump(openlineage,file,indent=4)

@@ -21,6 +21,8 @@ OPENLINEAGE_NAMESPACE = config("OPENLINEAGE_NAMESPACE",default="my-namespace",ca
 
 OUTPUT_FILE_NAME = config("OUTPUT_FILE_NAME",default="openlineage.json",cast=str)
 
+OPENLINEAGE_PRODUCER = config("OPENLINEAGE_PRODUCER",default="azure-lineage",cast=str)
+
 def get_api_client()->AzureClient:
     return AzureClient(azure_client_id=AZURE_CLIENT_ID,\
         azure_tenant_id=AZURE_TENANT_ID,\
