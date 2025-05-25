@@ -543,7 +543,7 @@ def to_open_lineage(namespace:str,producer:str,pipeline_lineage:PipelineLineage)
                 }
 
                 start_job_event["inputs"].append(input_dataset)
-                complete_job_event["outputs"].append(input_dataset)
+                complete_job_event["inputs"].append(input_dataset)
 
 
             output_dataset = {
