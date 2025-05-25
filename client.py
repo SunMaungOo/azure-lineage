@@ -2,7 +2,7 @@ import os
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.datafactory import DataFactoryManagementClient
 from typing import List,Optional
-from model import APIDatasetResource,APITriggerResource,APIPipelineResource,APIPipelineRun,APIActivityRun
+from model import APIDatasetResource,APITriggerResource,APIPipelineResource,APIPipelineRun,APIActivityRun,APILinkedServiceResource
 from datetime import datetime,timedelta
 from azure.mgmt.datafactory.models import RunFilterParameters,RunQueryFilter
 from datetime import datetime
@@ -39,6 +39,9 @@ class AzureClient:
             
     def get_datasets(self)->Optional[List[APIDatasetResource]]:
         return self.client.get_datasets() 
+    
+    def get_linked_service(self)->List[APILinkedServiceResource]:
+        return self.client.get_linked_service()
     
     def get_triggers(self)->Optional[List[APITriggerResource]]:
         return self.client.get_triggers()
@@ -83,6 +86,21 @@ class DataFactoryClient:
                 )
                 for dataset_resource in self.client.datasets.list_by_factory(resource_group_name=self.resource_group_name,\
                                                                             factory_name=self.data_factory_name)
+            ]
+        except Exception:
+            return None
+        
+    def get_linked_service(self)->List[APILinkedServiceResource]:
+
+        try:
+            return [
+                APILinkedServiceResource(
+                    linked_service_name=linked_service_resource.name,
+                    azure_data_type=linked_service_resource.properties.type,
+                    properties=linked_service_resource.properties
+                )
+                for linked_service_resource in self.client.linked_services.list_by_factory(resource_group_name=self.resource_group_name,\
+                                                                                           factory_name=self.data_factory_name)
             ]
         except Exception:
             return None
@@ -269,8 +287,22 @@ class SynapseClient:
 
         except Exception as e:
             return None
-            
+        
+    def get_linked_service(self)->List[APILinkedServiceResource]:
 
+        try:
+            return [
+                APILinkedServiceResource(
+                    linked_service_name=linked_service_resource.name,
+                    azure_data_type=linked_service_resource.properties.type,
+                    properties=linked_service_resource.properties
+                )
+                for linked_service_resource in self.client.linked_service.get_linked_services_by_workspace() 
+            ]
+        except Exception:
+            return None
+
+ 
     def get_triggers(self)->Optional[List[APITriggerResource]]:
 
         triggers:List[APITriggerResource] = list()

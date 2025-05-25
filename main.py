@@ -17,11 +17,15 @@ from model import (
     PipelineLineage,
     APIPipelineResource,
     APIPipelineRun,
-    APIActivityRun
+    APIActivityRun,
+    LinkedService,
+    LinkedServiceType,
+    DatabaseLinkedService,
+    BlobLinkedService
 )
-from connector import get_sql_script,get_dataset_type,get_dataset_info
+from connector import get_sql_script,get_dataset_type,get_dataset_info,get_linked_service_info,get_linked_service_type
 from client import AzureClient
-from config import get_api_client,DAYS_SEARCH,OPENLINEAGE_NAMESPACE,OUTPUT_FILE_NAME,OPENLINEAGE_PRODUCER
+from config import get_api_client,DAYS_SEARCH,OPENLINEAGE_NAMESPACE,OUTPUT_FILE_NAME,OPENLINEAGE_PRODUCER,IS_USE_FQN
 import uuid
 from datetime import datetime
 import json
@@ -55,7 +59,34 @@ def get_datasets(client:AzureClient)->Optional[List[Dataset]]:
     
     except Exception:
         return None
-    
+
+def get_linked_service(client:AzureClient)->Optional[List[LinkedService]]:
+
+    linked_service:List[LinkedService] = list()
+
+    try:
+        
+        #LinkedServiceResource
+
+        for linked_service_resource in client.get_linked_service():
+            info = get_linked_service_info(linked_service_resource=linked_service_resource)
+
+            linked_service.append(
+                LinkedService(
+                    name=linked_service_resource.linked_service_name,\
+                    type= get_linked_service_type(azure_linked_service_type=linked_service_resource.azure_data_type),
+                    info=info
+                )
+            )
+        
+        return linked_service
+        
+    except Exception:
+        return None
+
+
+    return linked_service    
+
 def get_started_pipeline_name(client:AzureClient)->Optional[Set[str]]:
 
     unique_started_pipeline_name:Set[str] = set()
@@ -99,6 +130,14 @@ def find_dataset(datasets:List[Dataset],search_dataset_name:str)->Optional[Datas
     
     return None
 
+def find_linked_service(linked_services:List[LinkedService],search_linked_service_name:str)->Optional[LinkedService]:
+
+    search_value = [x for x in linked_services if x.name==search_linked_service_name]
+
+    if len(search_value)>0:
+        return search_value[0]
+    
+    return None
 
 
 def get_copy_activity(datasets:List[Dataset],\
@@ -118,11 +157,11 @@ def get_copy_activity(datasets:List[Dataset],\
 
     is_output_supported = not(output is None or output.type==DatasetType.Unsupported)
 
-    if is_input_supported:
-        input = input.info
+    if not is_input_supported:
+        input = None
 
-    if is_output_supported:
-        output = output.info
+    if not is_output_supported:
+        output = None
 
     
     return CopyActivity(name=activity_name,\
@@ -275,9 +314,63 @@ def get_target_table(output_dataset:ProcessDataset,\
 
     return target_table
 
+def is_valid_lineage_linked_service(linked_service:LinkedService)->bool:
+    
+    if linked_service.type==LinkedServiceType.Unsupported:
+        return False
+    
+    elif isinstance(linked_service.info,DatabaseLinkedService):
+        return linked_service.info.host.parameter_type!=ParameterType.Expression and\
+        linked_service.info.database.parameter_type!=ParameterType.Expression
+    
+    elif isinstance(linked_service.info,BlobLinkedService):
+        return linked_service.info.url.parameter_type!=ParameterType.Expression
+
+    return False
+
+def get_linked_service_host_prefix(linked_service:LinkedService)->Optional[str]:
+
+    if not is_valid_lineage_linked_service(linked_service=linked_service):
+        return None
+    
+    if isinstance(linked_service.info,DatabaseLinkedService):
+        return f"{linked_service.info.host.value}.{linked_service.info.database.value}"
+    
+    elif isinstance(linked_service.info,BlobLinkedService):
+        return linked_service.info.url.value
+    
+    return None
+
+def add_source_host_prefix(table_value:str,host_prefix:str)->str:
+    """
+    Append the host information to the schema name and table name
+    table_value: string in schema.table format
+    """
+
+    transform_table_value = table_value
+
+    blocks = table_value.split(".")
+
+    block_lengths = len(blocks)
+
+    # get only the schema name and table name
+
+    if block_lengths>2:
+        transform_table_value = blocks[block_lengths-2]+"."+blocks[block_lengths-1] 
+
+    transform_table_value = f"{host_prefix}.{transform_table_value}"
+
+    return transform_table_value
+
+
+
+
+
 def get_pipeline_table_lineage(client:AzureClient,
                                pipeline_run:APIPipelineRun,\
-                               pipeline_info:Pipeline)->List[Edge]:
+                               pipeline_info:Pipeline,
+                               linked_services:List[LinkedService],\
+                               is_use_fqn:bool)->List[Edge]:
     """
     pipeline_run : pipeline run activity
     pipeline_info : pipeline name which have the same as pipeline info
@@ -308,18 +401,48 @@ def get_pipeline_table_lineage(client:AzureClient,
 
          # by common sense , we should only support single table dataset and location dataset as sink
 
-        if not(isinstance(static_copy_activity.output,SingleTableDataset) or\
-            isinstance(static_copy_activity.output,LocationDataset)):
+        if not(isinstance(static_copy_activity.output.info,SingleTableDataset) or\
+            isinstance(static_copy_activity.output.info,LocationDataset)):
             continue
 
-        source_table = get_source_tables(input_dataset=static_copy_activity.input,\
+        source_table = get_source_tables(input_dataset=static_copy_activity.input.info,\
                                          input_parameter_names=static_copy_activity.input_parameter_names,\
                                         pipeline_parameters=pipeline_parameters,\
                                         input_source_obj=activity_run.input["source"])
         
-        target_table = get_target_table(output_dataset=static_copy_activity.output,\
+
+        if is_use_fqn:
+
+            source_linked_service = find_linked_service(linked_services=linked_services,\
+                                search_linked_service_name=static_copy_activity.input.linked_service_name)
+                        
+            source_host_prefix = None
+            
+            if source_linked_service is not None:
+                source_host_prefix = get_linked_service_host_prefix(linked_service=source_linked_service)
+
+                if source_host_prefix is not None:
+                    source_table = {add_source_host_prefix(table_value=table_value,\
+                                                        host_prefix=source_host_prefix) for table_value in source_table}
+                    
+        target_table = get_target_table(output_dataset=static_copy_activity.output.info,\
                                         output_parameter_names=static_copy_activity.output_parameter_names,\
                                         pipeline_parameters=pipeline_parameters)
+        
+        if is_use_fqn:
+
+            target_linked_service = find_linked_service(linked_services=linked_services,\
+                                search_linked_service_name=static_copy_activity.output.linked_service_name)
+            
+            target_host_prefix = None
+            
+            if target_linked_service is not None:
+                target_host_prefix = get_linked_service_host_prefix(linked_service=target_linked_service)
+
+                if target_host_prefix is not None:
+                    target_table = add_source_host_prefix(table_value=target_table,\
+                                                        host_prefix=target_host_prefix)
+            
 
         # we cannot add lineage when we cannot parse the sink 
 
@@ -433,13 +556,14 @@ def to_open_lineage(namespace:str,producer:str,pipeline_lineage:PipelineLineage)
 
     return (start_job_event,complete_job_event)
 
-
 def main():
 
     client = get_api_client()
-    
+
     datasets = get_datasets(client=client)
 
+    linked_services = get_linked_service(client=client)
+    
     raw_pipeline = client.get_pipelines()
 
     raw_pipeline_names = [x.name for x in raw_pipeline]
@@ -464,7 +588,9 @@ def main():
 
             lineage = get_pipeline_table_lineage(client=client,\
                                          pipeline_run=pipeline_run,\
-                                        pipeline_info=pipeline_info)
+                                        pipeline_info=pipeline_info,\
+                                        linked_services=linked_services,\
+                                        is_use_fqn=IS_USE_FQN)
         
             pipeline_lineage.append(
                 PipelineLineage(

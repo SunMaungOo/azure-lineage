@@ -12,6 +12,14 @@ class DatasetType(Enum):
     OnPrimeMSSQL = 5
     Unsupported = 6
 
+class LinkedServiceType(Enum):
+    Oracle = 1
+    AzureSQL = 2
+    Synapse = 3 
+    Blob = 4
+    OnPrimeMSSQL = 5
+    Unsupported = 6
+
 class ParameterType(Enum):
     Expression=1
     Static=2
@@ -51,11 +59,28 @@ class Dataset:
     info:Optional[ProcessDataset]
 
 @dataclass
+class DatabaseLinkedService:
+    host:Parameter
+    database:Parameter
+
+@dataclass
+class BlobLinkedService:
+    url:Parameter
+
+ProcessLinkedService = Union[DatabaseLinkedService,BlobLinkedService]
+
+@dataclass
+class LinkedService:
+    name:str
+    type:LinkedServiceType
+    info:ProcessLinkedService
+
+@dataclass
 class CopyActivity:
     #activity name
     name:str
-    input:Optional[ProcessDataset]
-    output:Optional[ProcessDataset]
+    input:Optional[Dataset]
+    output:Optional[Dataset]
     input_parameter_names:List[str]
     output_parameter_names:List[str]
     is_input_supported:bool
@@ -80,6 +105,14 @@ class APIDatasetResource:
     azure_data_type:str
     #dataset properties
     properties:Dict[str,Any]
+
+@dataclass
+class APILinkedServiceResource:
+    linked_service_name:str
+    azure_data_type:str
+    #linked service properties
+    properties:Dict[str,Any]
+
 
 @dataclass
 class APITriggerResource:

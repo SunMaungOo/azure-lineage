@@ -23,6 +23,8 @@ OUTPUT_FILE_NAME = config("OUTPUT_FILE_NAME",default="openlineage.json",cast=str
 
 OPENLINEAGE_PRODUCER = config("OPENLINEAGE_PRODUCER",default="azure-lineage",cast=str)
 
+IS_USE_FQN  = config("IS_USE_FQN",default=True,cast=bool)
+
 def get_api_client()->AzureClient:
     return AzureClient(azure_client_id=AZURE_CLIENT_ID,\
         azure_tenant_id=AZURE_TENANT_ID,\
