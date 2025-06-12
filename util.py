@@ -14,7 +14,7 @@ def get_connection_properties(connection_str:str)->Dict[str,str]:
         property_block = block.split("=")
 
         if len(property_block)>=2:
-            connection_propertity[property_block[0].replace(" ","")] = property_block[1]
+            connection_propertity[property_block[0].replace(" ","").lower()] = property_block[1]
 
     return connection_propertity
 

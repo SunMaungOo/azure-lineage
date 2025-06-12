@@ -115,14 +115,18 @@ def get_linked_service_info(linked_service_resource:APILinkedServiceResource)->O
 
     linked_service_type = get_linked_service_type(azure_linked_service_type=azure_data_type)
 
-
     if linked_service_type in [LinkedServiceType.AzureSQL,
         LinkedServiceType.Synapse,
         LinkedServiceType.OnPrimeMSSQL]:
 
+        #if it is a dict type , it mean the linked service connection string is in azure key-vault (we are going to ignore it)
+        
+        if not isinstance(linked_service_resource.properties.connection_string,str):
+            return None
+
         connection_properties = get_connection_properties(connection_str=linked_service_resource.properties.connection_string)
 
-        host = connection_properties["DataSource"]
+        host = connection_properties["datasource"]
 
         host_parameter_type = ParameterType.Static
 
@@ -140,7 +144,7 @@ def get_linked_service_info(linked_service_resource:APILinkedServiceResource)->O
             parameter_type=host_parameter_type
         )
 
-        database = connection_properties["InitialCatalog"]
+        database = connection_properties["initialcatalog"]
 
         database_parameter_type = ParameterType.Static
 
@@ -160,6 +164,11 @@ def get_linked_service_info(linked_service_resource:APILinkedServiceResource)->O
 
     elif linked_service_type == LinkedServiceType.Oracle:
 
+        #if it is a dict type , it mean the linked service connection string is in azure key-vault (we are going to ignore it)
+        
+        if not isinstance(linked_service_resource.properties.connection_string,str):
+            return None
+
         connection_properties = get_connection_properties(connection_str=linked_service_resource.properties.connection_string)
 
         host = connection_properties["host"]
@@ -177,8 +186,8 @@ def get_linked_service_info(linked_service_resource:APILinkedServiceResource)->O
         if "sid" in connection_properties:
             database = connection_properties["sid"]
 
-        elif "serviceName" in connection_properties:
-            database = connection_properties["serviceName"]
+        elif "servicename" in connection_properties:
+            database = connection_properties["servicename"]
 
         database_parameter_type = ParameterType.Static
 
@@ -203,7 +212,7 @@ def get_linked_service_info(linked_service_resource:APILinkedServiceResource)->O
             connection_properties = get_connection_properties(connection_str=linked_service_resource.properties.connection_string)
 
             info = BlobLinkedService(
-                url=Parameter(value=connection_properties["AccountName"],\
+                url=Parameter(value=connection_properties["accountname"],\
                               parameter_type=ParameterType.Static)
             )
 

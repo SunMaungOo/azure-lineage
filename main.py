@@ -85,8 +85,6 @@ def get_linked_service(client:AzureClient)->Optional[List[LinkedService]]:
         return None
 
 
-    return linked_service    
-
 def get_started_pipeline_name(client:AzureClient)->Optional[Set[str]]:
 
     unique_started_pipeline_name:Set[str] = set()
@@ -563,7 +561,6 @@ def main():
     datasets = get_datasets(client=client)
 
     linked_services = get_linked_service(client=client)
-    
     raw_pipeline = client.get_pipelines()
 
     raw_pipeline_names = [x.name for x in raw_pipeline]
@@ -613,7 +610,6 @@ def main():
 
     with open(OUTPUT_FILE_NAME,"w") as file:
         json.dump(openlineage,file,indent=4)
-    
 
 if __name__=="__main__":
     main()
