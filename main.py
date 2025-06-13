@@ -29,6 +29,8 @@ from config import get_api_client,DAYS_SEARCH,OPENLINEAGE_NAMESPACE,OUTPUT_FILE_
 import uuid
 from datetime import datetime
 import json
+from pathlib import Path
+
 
 def get_datasets(client:AzureClient)->Optional[List[Dataset]]:
 
@@ -607,8 +609,11 @@ def main():
         openlineage.append(start_event)
         openlineage.append(complete_event)
 
+    output_file_path = Path(f"data/{OUTPUT_FILE_NAME}")
+    output_file_path.parent.mkdir(parents=True,exist_ok=True)
 
-    with open(OUTPUT_FILE_NAME,"w") as file:
+
+    with output_file_path.open(OUTPUT_FILE_NAME,"w") as file:
         json.dump(openlineage,file,indent=4)
 
 if __name__=="__main__":
