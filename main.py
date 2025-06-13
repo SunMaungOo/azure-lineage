@@ -613,7 +613,7 @@ def main():
     output_file_path.parent.mkdir(parents=True,exist_ok=True)
 
 
-    with output_file_path.open(OUTPUT_FILE_NAME,"w") as file:
+    with output_file_path.open("w") as file:
         json.dump(openlineage,file,indent=4)
 
 if __name__=="__main__":
