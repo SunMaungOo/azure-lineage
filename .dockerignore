@@ -3,3 +3,4 @@ Pipfile
 Pipfile.lock
 idea.txt
 .env
+.github/*
