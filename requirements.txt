@@ -1,6 +1,6 @@
-azure-identity
-azure-mgmt-datafactory
-sqlglot
-python-dateutil
-python-decouple
-azure-synapse-artifacts
+azure-identity==1.25.0
+azure-mgmt-datafactory==9.2.0
+sqlglot==27.16.3
+python-dateutil==2.9.0
+python-decouple==3.8
+azure-synapse-artifacts==0.21.0
