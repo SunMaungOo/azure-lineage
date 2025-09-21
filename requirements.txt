@@ -4,3 +4,4 @@ sqlglot==27.16.3
 python-dateutil==2.9.0
 python-decouple==3.8
 azure-synapse-artifacts==0.21.0
+munch==4.0.0
