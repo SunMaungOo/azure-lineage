@@ -682,7 +682,7 @@ def main()->int:
         Path(LINEAGE_OUTPUT_FILE_PATH).parent.mkdir(parents=True,exist_ok=True)
 
         with open(LINEAGE_OUTPUT_FILE_PATH,"w") as file:
-            json.dump([asdict(edge) for edge in lineage],file,indent=4)
+            json.dump([asdict(lineage) for lineage in pipeline_lineage],file,indent=4)
 
         logger.info(f"Saving lineage to {LINEAGE_OUTPUT_FILE_PATH}:success")
     
