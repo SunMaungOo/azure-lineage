@@ -1,9 +1,15 @@
 FROM python:3.12-alpine
 
-WORKDIR /app
+WORKDIR /opt/azure-lineage
 
-COPY . .
+COPY requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-ENTRYPOINT ["python", "main.py"]
+COPY start.sh .  
+
+RUN chmod +x start.sh
+
+COPY src/ ./src/
+
+ENTRYPOINT ["./start.sh"]
