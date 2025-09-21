@@ -14,7 +14,7 @@ from model import (
     ParameterType,
     LinkedService
 )
-from util import create_parameter,get_connection_properties
+from util import create_parameter,get_connection_properties,has_field
 from azure.mgmt.datafactory.models import DatasetResource
 import re
 
@@ -136,9 +136,11 @@ def get_linked_service_info(linked_service_resource:APILinkedServiceResource)->O
 
             connection_properties = None
 
-            if "connection_string" in linked_service_resource.properties:
+            if has_field(linked_service_resource.properties,"connection_string"):
+
                 connection_properties = get_connection_properties(connection_str=linked_service_resource.properties.connection_string)
-            elif "connectionString" in linked_service_resource.properties.typeProperties:
+            elif has_field(linked_service_resource.properties.typeProperties,"connectionString"):
+                
                 connection_properties = get_connection_properties(connection_str=linked_service_resource.properties.typeProperties.connectionString)
 
             
@@ -152,10 +154,10 @@ def get_linked_service_info(linked_service_resource:APILinkedServiceResource)->O
 
             url_connection_str = None
 
-            if "url" in linked_service_resource.properties:
+            if has_field(linked_service_resource.properties,"url"):
                 url_connection_str = linked_service_resource.properties.url
 
-            elif "url" in linked_service_resource.properties.typeProperties:
+            elif has_field(linked_service_resource.properties.typeProperties,"url"):
                 url_connection_str = linked_service_resource.properties.typeProperties.url
 
             host = url_connection_str.split("//")[1].replace("/","")
@@ -169,11 +171,11 @@ def get_linked_service_info(linked_service_resource:APILinkedServiceResource)->O
 
 def get_mssql_processed_linked_service(mssql_linked_service_resource:APILinkedServiceResource,\
                                        linked_service_parameter_value:str)->Optional[ProcessLinkedService]:
-    connection_string = None
+    connection_string:str = None
 
     # for old version of sql server linked service
 
-    if "connection_string" in mssql_linked_service_resource.properties:
+    if has_field(mssql_linked_service_resource.properties,"connection_string"):
         connection_string = mssql_linked_service_resource.properties.connection_string
     else:
         # for new version of sql server linked service
@@ -226,18 +228,18 @@ def get_mssql_processed_linked_service(mssql_linked_service_resource:APILinkedSe
 def get_oracle_processed_linked_service(oracle_linked_service_resource:APILinkedServiceResource,\
                               linked_service_parameter_value:str)->Optional[ProcessLinkedService]:
     
-    connection_string = None
+    connection_string:str = None
 
-    connection_properties = None
+    connection_properties:Dict[str,str] = None
 
     # for old version of oracle linked service
 
-    if "connection_string" in oracle_linked_service_resource.properties:
+    if has_field(oracle_linked_service_resource.properties,"connection_string"):
         connection_string = oracle_linked_service_resource.properties.connection_string
-    elif "connectionString" in oracle_linked_service_resource.properties.typeProperties:
+    elif has_field(oracle_linked_service_resource.properties.typeProperties,"connectionString"):
         # for new version of oracle server linked service
         connection_string = oracle_linked_service_resource.properties.typeProperties.connectionString
-    elif "server" in oracle_linked_service_resource.properties.typeProperties:
+    elif has_field(oracle_linked_service_resource.properties.typeProperties,"server"):
 
         server_info:str = oracle_linked_service_resource.properties.typeProperties.server
 

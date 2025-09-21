@@ -18,3 +18,12 @@ def get_connection_properties(connection_str:str)->Dict[str,str]:
 
     return connection_propertity
 
+def has_field(obj:object,field_name:str)->bool:
+    """
+    Check whether the obj have either key or attribute of field_name
+    """
+
+    if isinstance(obj,dict):
+        return field_name in obj
+
+    return hasattr(obj,field_name)
