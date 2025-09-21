@@ -25,11 +25,32 @@ from model import (
 )
 from connector import get_sql_script,get_dataset_type,get_dataset_info,get_linked_service_info,get_linked_service_type
 from client import AzureClient
-from config import get_api_client,DAYS_SEARCH,OPENLINEAGE_NAMESPACE,OUTPUT_FILE_NAME,OPENLINEAGE_PRODUCER,IS_USE_FQN
+from config import get_api_client,DAYS_SEARCH,OPENLINEAGE_NAMESPACE
+from config import OPENLINEAGE_OUTPUT_FILE_PATH,OPENLINEAGE_PRODUCER,IS_USE_FQN,LINEAGE_OUTPUT_FILE_PATH
 import uuid
 from datetime import datetime
 import json
 from pathlib import Path
+import logging
+import sys
+from dataclasses import asdict
+
+logger = logging.getLogger("azure-lineage")
+
+logger.setLevel(logging.DEBUG)
+
+logger.propagate = False
+
+formatter = logging.Formatter(
+    fmt='%(asctime)s | %(levelname)-8s | %(name)-15s | %(lineno)-3d | %(message)s',
+    datefmt='%Y-%m-%dT%H:%M:%S.%fZ'  # ISO 8601 with microseconds → Z for UTC
+)
+
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_handler.setFormatter(formatter)
+
+logger.addHandler(console_handler)
 
 
 def get_datasets(client:AzureClient)->Optional[List[Dataset]]:
@@ -556,14 +577,41 @@ def to_open_lineage(namespace:str,producer:str,pipeline_lineage:PipelineLineage)
 
     return (start_job_event,complete_job_event)
 
-def main():
+def main()->int:
 
     client = get_api_client()
 
+    logger.info("Extracting datasets:")
+
     datasets = get_datasets(client=client)
 
+    if datasets is None:
+        logger.info("Extracting datasets:fail")
+        return 1 
+    else:
+        logger.info("Extracting datasets:success")
+
+    logger.info("Extracting linked service:")
+
     linked_services = get_linked_service(client=client)
+
+    if linked_services is None:
+        logger.info("Extracting linked service:fail")
+        return 1
+    else:
+        logger.info("Extracting linked service:success")
+
+    logger.info("Extracting pipeline:")
+
     raw_pipeline = client.get_pipelines()
+
+    if raw_pipeline is None:
+        logger.info("Extracting pipeline:fail")
+        return 1
+    else:
+        logger.info("Extracting pipeline:success")
+
+
 
     raw_pipeline_names = [x.name for x in raw_pipeline]
         
@@ -573,6 +621,8 @@ def main():
     processed_pipeline:Set[str] = set()
 
     pipeline_lineage:List[PipelineLineage] = list()
+
+    logger.info("Extracting lineage:")
 
     for x in raw_pipeline_names:
 
@@ -599,22 +649,49 @@ def main():
             )
 
             processed_pipeline.add(pipeline_run.pipeline_name)
+    
+    logger.info("Extracting lineage:success")
+
+    logger.info(f"Lineage found:{len(pipeline_lineage)}")
 
     openlineage:List[Dict[str,Any]] = list()
 
-    for x in pipeline_lineage:
+    try:
+        for x in pipeline_lineage:
 
-        (start_event,complete_event) = to_open_lineage(namespace=OPENLINEAGE_NAMESPACE,producer=OPENLINEAGE_PRODUCER,pipeline_lineage=x)
+            (start_event,complete_event) = to_open_lineage(namespace=OPENLINEAGE_NAMESPACE,producer=OPENLINEAGE_PRODUCER,pipeline_lineage=x)
 
-        openlineage.append(start_event)
-        openlineage.append(complete_event)
+            openlineage.append(start_event)
+            openlineage.append(complete_event)
 
-    output_file_path = Path(f"data/{OUTPUT_FILE_NAME}")
-    output_file_path.parent.mkdir(parents=True,exist_ok=True)
+        output_file_path = Path(OPENLINEAGE_OUTPUT_FILE_PATH)
+        output_file_path.parent.mkdir(parents=True,exist_ok=True)
 
 
-    with output_file_path.open("w") as file:
-        json.dump(openlineage,file,indent=4)
+        with output_file_path.open("w") as file:
+            json.dump(openlineage,file,indent=4)
+
+        logger.info(f"Saving lineage (openlineage) to {OPENLINEAGE_OUTPUT_FILE_PATH}:success")
+
+    except:
+        logger.info(f"Saving lineage (openlineage) to {OPENLINEAGE_OUTPUT_FILE_PATH}:fail")
+        return 1
+    
+    try:
+
+        Path(LINEAGE_OUTPUT_FILE_PATH).parent.mkdir(parents=True,exist_ok=True)
+
+        with open(LINEAGE_OUTPUT_FILE_PATH,"w") as file:
+            json.dump([asdict(edge) for edge in lineage],file,indent=4)
+
+        logger.info(f"Saving lineage to {LINEAGE_OUTPUT_FILE_PATH}:success")
+    
+    except:
+        logger.info(f"Saving lineage to {LINEAGE_OUTPUT_FILE_PATH}:fail")
+
+        return 1
+
+    return 0
 
 if __name__=="__main__":
-    main()
+    sys.exit(main())

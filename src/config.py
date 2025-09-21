@@ -19,11 +19,13 @@ DAYS_SEARCH = config("DAYS_SEARCH",default=1,cast=int)
 
 OPENLINEAGE_NAMESPACE = config("OPENLINEAGE_NAMESPACE",default="my-namespace",cast=str)
 
-OUTPUT_FILE_NAME = config("OUTPUT_FILE_NAME",default="openlineage.json",cast=str)
+OPENLINEAGE_OUTPUT_FILE_PATH = config("OPENLINEAGE_OUTPUT_FILE_PATH",default="openlineage.json",cast=str)
 
 OPENLINEAGE_PRODUCER = config("OPENLINEAGE_PRODUCER",default="azure-lineage",cast=str)
 
 IS_USE_FQN  = config("IS_USE_FQN",default=True,cast=bool)
+
+LINEAGE_OUTPUT_FILE_PATH = config("LINEAGE_OUTPUT_FILE_PATH",default="lineage.json",cast=str)
 
 def get_api_client()->AzureClient:
     return AzureClient(azure_client_id=AZURE_CLIENT_ID,\

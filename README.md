@@ -41,9 +41,11 @@ The following environment variables are required or optional when running the ex
 | `IS_AZURE_DATA_FACTORY`                | Whether the target is a Data Factory. Use `false` for Synapse.              | `true`  |
 | `DAYS_SEARCH`                          | Number of days of logs to read when generating lineage.                      | `1`     |
 | `OPENLINEAGE_NAMESPACE`                | Custom namespace for OpenLineage.                                           | `my-namespace` |
-| `OUTPUT_FILE_NAME`                     | Custom output file for OpenLineage.                                         | `openlineage.json` |
+| `OPENLINEAGE_OUTPUT_FILE_PATH`                     | Custom output path for OpenLineage.                                         | `openlineage.json` |
 | `OPENLINEAGE_PRODUCER`                 | Custom producer name for OpenLineage.                                       | `azure-lineage` |
 | `IS_USE_FQN`                           | Whether to use fully qualified database names for lineage.                  | `true`  |
+| `LINEAGE_OUTPUT_FILE_PATH`             | Custom output path for lineage.                                       | `lineage.json` |
+
 
 
 
