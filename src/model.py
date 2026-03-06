@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass,field
 from enum import Enum
 from typing import List,Optional,Union,Any,Dict
 from graph import Edge
@@ -143,5 +143,27 @@ class APIActivityRun:
     activity_name:str
     activity_type:str
     input:Any
+
+
+
+class ActivityType(Enum):
+    Copy = 1
+    Procedure = 2
+    Execute = 3
+    If = 4 
+    ForEach = 5
+    While = 6
+    Unsupported = 7
+
+
+@dataclass
+class Activity:
+    activity_name:str
+    activity_type:ActivityType
+    depends_on:List[str] = field(default_factory=list)
+    true_children:List["Activity"] = field(default_factory=list)
+    false_children:List["Activity"] = field(default_factory=list)
+    # ForEach/while which only have 1 single body
+    body_children:List["Activity"] = field(default_factory=list)
 
 

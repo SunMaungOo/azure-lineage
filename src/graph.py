@@ -1,4 +1,4 @@
-from typing import List,Dict,Optional
+from typing import List,Dict,Optional,Set
 from dataclasses import dataclass
 
 
@@ -6,7 +6,6 @@ from dataclasses import dataclass
 class Edge:
     node_name:str
     parent_nodes:List[str]
-
 
 def is_valid_edge(edge:Edge)->bool:
     return len(edge.parent_nodes)==len(set(edge.parent_nodes))
@@ -576,3 +575,22 @@ def join_to_node(node_name:str,concate_edges:List[Edge],edges:List[Edge])->Optio
             new_concate_edges.append(edge)
             
     return merge_edge(left_edges=edges,right_edges=new_concate_edges)
+
+def get_node_names(edges:List[Edge])->Set[str]:
+    """
+    Return unique node name in the edges
+    """
+    return {x.node_name for x in edges}
+
+def get_parent_nodes(node_name:str,edges:List[Edge])->Optional[Set[str]]:
+    """
+    Return the unique parent of the node in the edges
+    """
+
+    node = get_node(node_name=node_name,\
+             edges=edges)
+    
+    if node is None:
+        return None
+    
+    return set(node.parent_nodes)
