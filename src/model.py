@@ -167,3 +167,14 @@ class Activity:
     body_children:List["Activity"] = field(default_factory=list)
 
 
+
+@dataclass(frozen=True)
+class Resolved:
+    value: str
+
+@dataclass(frozen=True)
+class Unresolved:
+    expression: str
+    reason:     str
+
+ParameterValue = Resolved | Unresolved

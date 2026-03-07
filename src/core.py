@@ -1,6 +1,23 @@
-from model import Activity,ActivityType
-from typing import List,Dict
+from model import Activity,ActivityType,ParameterValue,Resolved,Unresolved
+from typing import List,Dict,Optional
 from graph import Edge,merge_edge,replace_node_with_edge,remove_node
+import re
+
+WHOLE_DATASET_PATTERN = re.compile(r"^@dataset\(\)\.(\w+)$")
+
+WHOLE_PIPELINE_PATTERN = re.compile(r"^@pipeline\(\)\.parameters\.(\w+)$")
+
+WHOLE_LINKED_SERVICE_PATTERN = re.compile(r"^@linkedService\(")
+
+# find @{...} interolated pattern
+
+INTERPOLATED_PATTERN = re.compile(r"@\{([^}]+)\}")
+
+INTERPOLATED_DATASET_PATTERN = re.compile(r"^dataset\(\)\.(\w+)$")
+
+INTERPOLATED_PIPELINE_PATTERN = re.compile(r"^pipeline\(\)\.parameters\.(\w+)$")
+
+INTERPOLATED_LINKED_SERVICE_PATTERN = re.compile(r"linkedService\(")
 
 def get_activities_graph(activities:List[Activity])->List[Edge]:
     """
@@ -142,3 +159,132 @@ def get_virtual_graph(activities:List[Activity])->List[Edge]:
                                edges=edges)
     
     return edges
+
+def resolve_expression(expression:str,\
+                       dataset_parameters:Dict[str, str],\
+                       pipeline_parameters:Dict[str, str])->ParameterValue:
+
+    if expression is None:
+
+        return Unresolved(expression="None",\
+                          reason="null value")
+
+    if WHOLE_LINKED_SERVICE_PATTERN.search(expression):
+
+        return Unresolved(expression=expression,
+                          reason="linkedService() cannot be resolved statically")
+
+    match = WHOLE_DATASET_PATTERN.match(expression)
+
+    if match:
+
+        name = match.group(1)
+
+        if name in dataset_parameters:
+            return Resolved(dataset_parameters[name])
+        
+        return Unresolved(expression=expression,\
+                          reason=f"dataset parameter '{name}' not in context")
+
+    match = WHOLE_PIPELINE_PATTERN.match(expression)
+
+    if match:
+
+        name = match.group(1)
+
+        if name in pipeline_parameters:
+            return Resolved(pipeline_parameters[name])
+        
+        return Unresolved(expression=expression,\
+                          reason=f"pipeline parameter '{name}' not in context")
+    
+    # handle interpolated @{...} anywhere in the expression
+    
+    tokens = INTERPOLATED_PATTERN.findall(expression)
+
+    if tokens:
+
+        result = expression
+
+        for interpolated_expression in tokens:
+
+            resolved = resolve_interpolated_expression(interpolated_expression=interpolated_expression,\
+                                                       dataset_parameters=dataset_parameters,\
+                                                       pipeline_parameters=pipeline_parameters)
+            if isinstance(resolved, Unresolved):
+
+                return Unresolved(expression=expression,\
+                                  reason=f"could not resolve @{{{interpolated_expression}}}: {resolved.reason}")
+            
+            result = result.replace(f"@{{{interpolated_expression}}}",\
+                                    resolved.value,\
+                                    1)
+        return Resolved(result)
+
+    # if it is a constant value , just return it
+
+    if not expression.startswith("@"):
+        return Resolved(expression)            
+
+    return Unresolved(expression=expression,\
+                      reason="unrecognised expression")
+
+def resolve_interpolated_expression(interpolated_expression:str,\
+                                    dataset_parameters:Dict[str, str],\
+                                    pipeline_parameters:Dict[str, str])->ParameterValue:
+    
+    """Resolve the expression with @{...}."""
+
+    if INTERPOLATED_LINKED_SERVICE_PATTERN.search(interpolated_expression):
+
+        return Unresolved(expression=interpolated_expression,\
+                          reason="linkedService() cannot be resolved statically")
+
+    match = INTERPOLATED_DATASET_PATTERN.match(interpolated_expression)
+
+    if match:
+
+        name = match.group(1)
+
+        if name in dataset_parameters:
+            return Resolved(dataset_parameters[name])
+        
+        return Unresolved(expression=interpolated_expression,\
+                                reason=f"dataset parameter '{name}' not in context")
+
+    match = INTERPOLATED_PIPELINE_PATTERN.match(interpolated_expression)
+
+    if match:
+
+        name = match.group(1) 
+
+        if name in pipeline_parameters:
+            return Resolved(pipeline_parameters[name])
+        
+        return Unresolved(expression=interpolated_expression,\
+                                reason=f"pipeline parameter '{name}' not in context")
+
+
+    return Unresolved(expression=interpolated_expression,\
+                       reason="unrecognised expression")
+
+def resolve_table_expression(schema_expression:str,
+                            table_expression:str,
+                            dataset_parameters:Dict[str, str],
+                            pipeline_parameters:Dict[str, str])->Optional[str]:
+    """
+    Resolve schema expression and table expression to schema.table format
+    """
+    schema = resolve_expression(expression=schema_expression,\
+                                dataset_parameters=dataset_parameters,\
+                                pipeline_parameters=pipeline_parameters)
+    
+    table = resolve_expression(expression=table_expression,\
+                                dataset_parameters=dataset_parameters,\
+                                pipeline_parameters=pipeline_parameters)
+
+    if isinstance(schema, Unresolved) or isinstance(table, Unresolved):
+        return None
+
+    return f"{schema.value}.{table.value}"
+
