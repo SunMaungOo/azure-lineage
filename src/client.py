@@ -3,7 +3,7 @@ from azure.identity import DefaultAzureCredential
 from azure.mgmt.datafactory import DataFactoryManagementClient
 from typing import List,Optional
 from model import APIDatasetResource,APITriggerResource,APIPipelineResource,APIPipelineRun,APIActivityRun,APILinkedServiceResource
-from datetime import datetime,timedelta
+from datetime import datetime,timedelta,timezone
 from azure.mgmt.datafactory.models import RunFilterParameters,RunQueryFilter
 from datetime import datetime
 from azure.synapse.artifacts import ArtifactsClient
@@ -184,7 +184,7 @@ class DataFactoryClient:
         if days<1:
             return None
 
-        time_now = datetime.now()
+        time_now = datetime.now(timezone.utc)
 
         time_from = time_now - timedelta(days=days)
 
@@ -380,7 +380,7 @@ class SynapseClient:
         if days<1:
             return None
 
-        time_now = datetime.now()
+        time_now = datetime.now(timezone.utc)
 
         time_from = time_now - timedelta(days=days)
 
