@@ -42,7 +42,7 @@ def remove_node(node_name:str,edges:List[Edge])->Optional[List[Edge]]:
 
     for edge in used_edges:
 
-        used_parent_node = edge.parent_nodes
+        used_parent_node = list(edge.parent_nodes)
 
         #concate the parent node of the remove node to the node which is using that remove node
 
@@ -230,7 +230,7 @@ def replace_nodes(node_name:str,replace_node_names:List[str],edges:List[Edge])->
         new_used_edge:List[Edge] = list()
 
         for node in used_edge:
-            new_parents = node.parent_nodes
+            new_parents = list(node.parent_nodes)
 
             #remove the node that we are going to replace as parent
 
@@ -304,7 +304,7 @@ def replace_node_parents(node_name:str,replace_node_names:List[str],edges:List[E
 
     for edge in used_edges:
 
-        parent_nodes = edge.parent_nodes
+        parent_nodes = list(edge.parent_nodes)
 
         if edge.node_name in used_edges_dict:
 
@@ -320,7 +320,8 @@ def replace_node_parents(node_name:str,replace_node_names:List[str],edges:List[E
 
                     parent_nodes.append(replace_node_name)
 
-        new_used_edges.append(edge)
+        new_used_edges.append(Edge(node_name=edge.node_name,\
+                                   parent_nodes=parent_nodes))
 
     used_edges_dict = edge_to_dict(new_used_edges)
 
@@ -390,7 +391,7 @@ def replace_node_with_edge(node_name:str,replace_edges:List[Edge],edges:List[Edg
 
         for edge in new_edges:
             if edge.node_name in front_combine_node_names:
-                parent_nodes = edge.parent_nodes
+                parent_nodes = list(edge.parent_nodes)
 
                 for parent_node_name in remove_node_parents:
                     if parent_node_name not in parent_nodes:
@@ -513,7 +514,7 @@ def join_to_node(node_name:str,concate_edges:List[Edge],edges:List[Edge])->Optio
             #if it is not a node that we wanted to join , add that join node as parent nodes
 
             if edge.node_name!=node_name:
-                parent_nodes = edge.parent_nodes
+                parent_nodes = list(edge.parent_nodes)
                 parent_nodes.append(node_name)
 
                 new_first_nodes.append(
@@ -559,7 +560,7 @@ def join_to_node(node_name:str,concate_edges:List[Edge],edges:List[Edge])->Optio
 
             if is_in_first_node or is_in_disjointed_nodes:
 
-                parent_nodes = edge.parent_nodes
+                parent_nodes = list(edge.parent_nodes)
                 parent_nodes.append(node_name)
 
                 new_concate_edges.append(

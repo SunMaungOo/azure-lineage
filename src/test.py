@@ -4,7 +4,7 @@ from core import (
     branch_to_edges,
     get_flatten_branches,
     get_simplify_graph,
-    get_activity_type,
+    get_activities_type,
     get_virtual_graph,
     resolve_expression,
     resolve_table_expression
@@ -122,7 +122,7 @@ def test_get_activity_type_flat():
     activities = [copy_activity(name="A"),\
                   procedure_activity(name="B")]
 
-    result = get_activity_type(activities)
+    result = get_activities_type(activities)
 
     assert result["A"] == ActivityType.Copy
     assert result["B"] == ActivityType.Procedure
@@ -133,7 +133,7 @@ def test_get_activity_type_includes_nested():
                               true_branch=[copy_activity(name="B")],\
                                 false_branch=[copy_activity(name="C")])]
     
-    result = get_activity_type(activities)
+    result = get_activities_type(activities)
 
     assert result["A"] == ActivityType.If
     assert result["B"] == ActivityType.Copy
@@ -143,9 +143,9 @@ def test_get_activity_type_no_mutation_across_calls():
 
     # Mutable default argument bug — second call must not see first call's data
 
-    get_activity_type([copy_activity(name="A")])
+    get_activities_type([copy_activity(name="A")])
 
-    result = get_activity_type([copy_activity(name="B")])
+    result = get_activities_type([copy_activity(name="B")])
 
     assert "A" not in result
 

@@ -11,8 +11,6 @@ from model import (
     LocationDataset,
     ParameterType,
     Parameter,
-    CopyActivity,
-    Pipeline,
     ProcessDataset,
     PipelineLineage,
     APIPipelineResource,
@@ -21,19 +19,25 @@ from model import (
     LinkedService,
     LinkedServiceType,
     DatabaseLinkedService,
-    BlobLinkedService
+    BlobLinkedService,
+    PipelineRuntimeContext,
+    GenericActivity,
+    StaticPipeline,
+    ActivityType
 )
 from connector import get_sql_script,get_dataset_type,get_dataset_info,get_linked_service_info,get_linked_service_type
 from client import AzureClient
 from config import get_api_client,DAYS_SEARCH,OPENLINEAGE_NAMESPACE
 from config import OPENLINEAGE_OUTPUT_FILE_PATH,OPENLINEAGE_PRODUCER,IS_USE_FQN,LINEAGE_OUTPUT_FILE_PATH
 import uuid
-from datetime import datetime
+from datetime import datetime,timezone
 import json
 from pathlib import Path
 import logging
 import sys
 from dataclasses import asdict
+from core import to_activities,get_virtual_graph,get_activity_type,resolve_table_expression,expand_activities
+from util import has_field
 
 logger = logging.getLogger("azure-lineage")
 
@@ -107,41 +111,18 @@ def get_linked_service(client:AzureClient)->Optional[List[LinkedService]]:
     except Exception:
         return None
 
-
-def get_started_pipeline_name(client:AzureClient)->Optional[Set[str]]:
-
-    unique_started_pipeline_name:Set[str] = set()
-
-    try:
-
-        #TriggerResource
-
-        for trigger in client.get_triggers():
-            
-            if trigger.runtime_state=="Started":
-                for pipeline_name in trigger.pipeline_names:
-                    unique_started_pipeline_name.add(pipeline_name)
-                    
-        return unique_started_pipeline_name
-    
-    except Exception:
-        return None
-
-
-def get_latest_pipeline_info(pipeline_runs:List[APIPipelineRun])->List[APIPipelineRun]:
+def get_latest_pipeline_info(pipeline_runs:List[APIPipelineRun])->Optional[APIPipelineRun]:
     """
     Get only the latest pipeline run to get the last run of the pipeline
     """
-    return [x for x in pipeline_runs if x.is_latest]
+    pipeline_run =  [x for x in pipeline_runs if x.is_latest]
+
+    if len(pipeline_run)>0:
+        return max(pipeline_run,key=lambda x:x.run_start)
+        
+    return None
 
     
-def get_copy_activities_run(activities:List[APIActivityRun])->List[APIActivityRun]:
-    """
-    Get copy activity 
-    """
-    return [actv for actv in activities if actv.activity_type=="Copy"]
-
-
 def find_dataset(datasets:List[Dataset],search_dataset_name:str)->Optional[Dataset]:
 
     search_value = [x for x in datasets if x.name==search_dataset_name]
@@ -161,179 +142,72 @@ def find_linked_service(linked_services:List[LinkedService],search_linked_servic
     return None
 
 
-def get_copy_activity(datasets:List[Dataset],\
-                      input_dataset_name:str,\
-                      output_dataset_name:str,\
-                      activity_name:str,\
-                      input_parameters:List[Parameter],
-                      output_parameters:List[Parameter]):
-    
-    input = find_dataset(datasets=datasets,\
-                         search_dataset_name=input_dataset_name)
+def get_placeholder_activity(activity_name:str)->GenericActivity:
+    """
+    Return generic activity for activity we will wanted to support in the future
+    """
+    return GenericActivity(
+        name=activity_name,
+        activity_type=ActivityType.Unsupported,\
+        input_dataset=None,
+        output_dataset=None,\
+        input_dataset_parameters=list(),\
+        output_dataset_parameters=list(),\
+        is_input_supported=False,\
+        is_output_supported=False
+    )
 
-    output = find_dataset(datasets=datasets,\
-                          search_dataset_name=output_dataset_name)
+def get_generic_activity(raw_activity:Any,\
+                         datasets:List[Dataset])->GenericActivity:
     
-    is_input_supported = not(input is None or input.type==DatasetType.Unsupported)
+    # something went wrong when there is no inputs and output
 
-    is_output_supported = not(output is None or output.type==DatasetType.Unsupported)
+    if not has_field(raw_activity,"inputs") and not has_field(raw_activity,"outputs"):
+        return get_placeholder_activity(activity_name=raw_activity.name)
+    
+    # for more activity support , we need to modify this function
+
+    input_dataset_name = raw_activity.inputs[0].reference_name
+
+    output_dataset_name = raw_activity.outputs[0].reference_name
+
+    input_dataset = find_dataset(datasets=datasets,\
+                                 search_dataset_name=input_dataset_name)
+    
+    output_dataset = find_dataset(datasets=datasets,\
+                                 search_dataset_name=output_dataset_name)
+    
+    is_input_supported = not(input_dataset is None or input_dataset.type==DatasetType.Unsupported)
+
+    is_output_supported = not(output_dataset is None or output_dataset.type==DatasetType.Unsupported)
+
+    input_dataset_parameters:List[str] = list()
+
+    if raw_activity.inputs[0].parameters is not None:
+        input_dataset_parameters =  [x for x in raw_activity.inputs[0].parameters]
+
+    output_dataset_parameters:List[str] = list()
+
+    if raw_activity.outputs[0].parameters is not None:
+        output_dataset_parameters =  [x for x in raw_activity.outputs[0].parameters]
 
     if not is_input_supported:
-        input = None
+        input_dataset = None
 
     if not is_output_supported:
-        output = None
+        output_dataset = None
 
-    
-    return CopyActivity(name=activity_name,\
-                        input=input,\
-                        output=output,\
-                        input_parameter_names=input_parameters,\
-                        output_parameter_names=output_parameters,\
-                        is_input_supported=is_input_supported,\
-                        is_output_supported=is_output_supported)
+    return GenericActivity(
+        name=raw_activity.name,\
+        activity_type=get_activity_type(raw_activity.type),\
+        input_dataset=input_dataset,\
+        output_dataset=output_dataset,\
+        input_dataset_parameters=input_dataset_parameters,\
+        output_dataset_parameters=output_dataset_parameters,\
+        is_input_supported=is_input_supported,\
+        is_output_supported=is_output_supported
+    )
 
-def get_copy_pipelines(pipeline_resources:List[APIPipelineResource],\
-                  datasets:List[Dataset])->List[Pipeline]:
-    """
-    Get pipeline with all the copy activities of it
-    """
-    
-    pipelines:List[Pipeline] = list()
-
-    for pipeline in pipeline_resources:
-
-        pipeline_name = pipeline.name
-
-        copy_activities:List[CopyActivity] = list()
-
-        for activity in pipeline.activities:
-
-            copy_activities.extend(from_activity_get_copy_activity(activity=activity,\
-                                                                   datasets=datasets))
-        
-        pipelines.append(Pipeline(pipeline_name=pipeline_name,\
-                                 copy_activities=copy_activities))
-    
-    return pipelines
-
-
-def from_activity_get_copy_activity(activity:Dict[str,Any],\
-                                    datasets:List[Dataset])->List[CopyActivity]:
-    """
-    Recursively get the copy activity
-    """
-    
-    copy_activities:List[CopyActivity] = list()
-
-    if activity.type=="Copy":
-        
-        input_parameters = [x for x in activity.inputs[0].parameters]
-
-        output_parameters = [x for x in activity.outputs[0].parameters]
-
-        copy_activities.append(get_copy_activity(datasets=datasets,\
-                                    input_dataset_name=activity.inputs[0].reference_name,\
-                                    output_dataset_name=activity.outputs[0].reference_name,\
-                                    activity_name=activity.name,
-                                    input_parameters=input_parameters,\
-                                    output_parameters=output_parameters))
-        
-    elif activity.type=="IfCondition":
-        if activity.if_true_activities is not None:
-            for inner_activity in activity.if_true_activities:
-                copy_activities.extend(from_activity_get_copy_activity(activity=inner_activity,\
-                                                                       datasets=datasets))
-                
-        if activity.if_false_activities is not None:
-            for inner_activity in activity.if_false_activities:
-                copy_activities.extend(from_activity_get_copy_activity(activity=inner_activity,\
-                                                                       datasets=datasets))
-
-    elif activity.type=="ForEach":
-        for inner_activity in activity.activities:
-            copy_activities.extend(from_activity_get_copy_activity(activity=inner_activity,\
-                                                                       datasets=datasets))
-
-
-
-
-    return copy_activities
-
-
-def pass_parameters_single_table_dataset(dataset:SingleTableDataset,\
-                                         parameter_names:List[str],\
-                                         pipeline_parameter:Dict[str,str])->SingleTableDataset:
-    
-    process_dataset = deepcopy(dataset)
-    
-    pass_parameter_value:Dict[str,str] = dict()
-
-    for parameter in pipeline_parameter:
-        if parameter in parameter_names:
-            pass_parameter_value["@dataset()."+parameter] = pipeline_parameter[parameter]
-
-    if process_dataset.schema.parameter_type==ParameterType.Expression:
-        for x in pass_parameter_value:
-            process_dataset.schema.parameter_type = ParameterType.Static
-            process_dataset.schema.value =  process_dataset.schema.value.replace(x,pass_parameter_value[x])
-
-    if process_dataset.table.parameter_type==ParameterType.Expression:
-        for x in pass_parameter_value:
-            process_dataset.table.parameter_type = ParameterType.Static
-            process_dataset.table.value = process_dataset.table.value.replace(x,pass_parameter_value[x])
-
-    return process_dataset
-
-
-def get_source_tables(input_dataset:ProcessDataset,\
-                      input_parameter_names:List[str],\
-                      pipeline_parameters:Dict[str,str],\
-                      input_source_obj:Dict[str,Any])->Set[str]:
-    
-    source_tables:Set[str] = set()
-
-    if isinstance(input_dataset,SingleTableDataset):
-        
-        process_input_dataset = pass_parameters_single_table_dataset(dataset=input_dataset,\
-                                                             parameter_names=input_parameter_names,\
-                                                            pipeline_parameter=pipeline_parameters)
-                
-        source_tables.add(f"{process_input_dataset.schema.value}.{process_input_dataset.table.value}")
-
-    elif isinstance(input_dataset,QueryDataset):
-
-        sql = get_sql_script(input_source_obj=input_source_obj,\
-                                     dataset_type=input_dataset.type)
-         
-        #ignore when we cannot parse the sql 
-        try:
-            source_tables = get_sql_lineage(sql=sql)
-        except Exception:
-            return set()
-
-    elif isinstance(input_dataset,LocationDataset):
-        source_tables.add(input_dataset.location)
-
-    return source_tables
-
-def get_target_table(output_dataset:ProcessDataset,\
-                     output_parameter_names:List[str],\
-                     pipeline_parameters:Dict[str,str])->Optional[str]:
-    
-    target_table = None
-    
-    if isinstance(output_dataset,SingleTableDataset):
-        process_output_dataset = pass_parameters_single_table_dataset(dataset=output_dataset,\
-                                                             parameter_names=output_parameter_names,\
-                                                            pipeline_parameter=pipeline_parameters)
-                
-        target_table = f"{process_output_dataset.schema.value}.{process_output_dataset.table.value}"
-
-    elif isinstance(output_dataset,LocationDataset):
-        target_table = output_dataset.location
-
-    return target_table
 
 def is_valid_lineage_linked_service(linked_service:LinkedService)->bool:
     
@@ -383,114 +257,176 @@ def add_source_host_prefix(table_value:str,host_prefix:str)->str:
 
     return transform_table_value
 
-
-
-
-
-def get_pipeline_table_lineage(client:AzureClient,
-                               pipeline_run:APIPipelineRun,\
-                               pipeline_info:Pipeline,
-                               linked_services:List[LinkedService],\
-                               is_use_fqn:bool)->List[Edge]:
-    """
-    pipeline_run : pipeline run activity
-    pipeline_info : pipeline name which have the same as pipeline info
-    """
-
-    lineage:List[Edge] = list()
+def resolve_source_table(activity:GenericActivity,\
+                         runtime:PipelineRuntimeContext,\
+                         linked_services:List[LinkedService],\
+                         is_use_fqn:bool)->Set[str]:
     
-    # the pipeline parameter which is actually passed
+    input_dataset = activity.input_dataset
 
-    pipeline_parameters = pipeline_run.parameters
+    input_dataset_info = input_dataset.info
+            
+    source_tables:Set[str] = set()
 
-    activities = client.get_activities_run(pipeline_run=pipeline_run)
+    if isinstance(input_dataset_info,SingleTableDataset):
 
-    # get the copy activity from activity run log
+        dataset_parameters = {
+            name:runtime.pipeline_parameters[name]
+            for name in activity.input_dataset_parameters
+            if name in runtime.pipeline_parameters
+        }
 
-    for activity_run in get_copy_activities_run(activities=activities):
+        table_reference = resolve_table_expression(schema_expression=input_dataset_info.schema.value,\
+                                                   table_expression=input_dataset_info.table.value,\
+                                                   dataset_parameters=dataset_parameters,
+                                                   pipeline_parameters=runtime.pipeline_parameters)
                 
-        activity_name = activity_run.activity_name
+        if table_reference is None:
+            logger.warning(f"Could not resolve source table for dataset {input_dataset.name}")
+        else:
+            source_tables.add(table_reference)
 
-        # get the same copy activity information that we got from static analysis
+    elif isinstance(input_dataset_info,QueryDataset):
+
+        input_source_obj = runtime.activity_source_inputs.get(activity.name)
+
+        # if it is null , it mean the activity is not run so we cannot get any information about it (activity have failed,skipped).
+        # essential we cannot get the runtime information for it
+        if input_source_obj is None:
+            return set()
+
+        sql = get_sql_script(input_source_obj=input_source_obj,\
+                                     dataset_type=input_dataset_info.type)
+         
+        #ignore when we cannot parse the sql 
+        try:
+            source_tables = get_sql_lineage(sql=sql)
+        except Exception:
+            return set()
+
+    elif isinstance(input_dataset_info,LocationDataset):
+        source_tables.add(input_dataset_info.location)
+
+    if is_use_fqn and len(source_tables)>0:
+
+        linked_service = find_linked_service(linked_services=linked_services,\
+                                             search_linked_service_name=input_dataset.linked_service_name)
+        
+        if linked_services is not None:
+
+            source_host_prefix = get_linked_service_host_prefix(linked_service=linked_service)
+
+            if source_host_prefix is not None:
+                source_tables = {add_source_host_prefix(table_value=table,host_prefix=source_host_prefix) for table in source_tables}
+
     
-        static_copy_activity = [x for x in pipeline_info.copy_activities if x.name==activity_name][0]
+    return source_tables
+
+def resolve_target_table(activity:GenericActivity,\
+                         runtime:PipelineRuntimeContext,\
+                         linked_services:List[LinkedService],\
+                         is_use_fqn:bool)->Optional[str]:
+
+    
+    output_dataset = activity.output_dataset
+
+    output_dataset_info = output_dataset.info
+
+    target_table = None
+
+    if isinstance(output_dataset_info,SingleTableDataset):
+
+        dataset_parameters = {
+            name:runtime.pipeline_parameters[name]
+            for name in activity.output_dataset_parameters
+            if name in runtime.pipeline_parameters
+        }
+
+        target_table = resolve_table_expression(schema_expression=output_dataset_info.schema.value,\
+                                                   table_expression=output_dataset_info.table.value,\
+                                                   dataset_parameters=dataset_parameters,
+                                                   pipeline_parameters=runtime.pipeline_parameters)
+                
+        if target_table is None:
+             logger.warning(f"Could not resolve target table for dataset {output_dataset.name}")
+
+    elif isinstance(output_dataset_info,LocationDataset):
+        target_table=output_dataset_info.location
+
+
+    if is_use_fqn and target_table is not None:
+
+        linked_service = find_linked_service(linked_services=linked_services,\
+                                             search_linked_service_name=output_dataset.linked_service_name)
+        
+        if linked_services is not None:
+
+            target_host_prefix = get_linked_service_host_prefix(linked_service=linked_service)
+
+            if target_host_prefix is not None:
+                target_table = add_source_host_prefix(table_value=target_table,\
+                                                      host_prefix=target_host_prefix)
+                            
+    return target_table
+
+
+def get_pipeline_table_lineage(static_pipeline:StaticPipeline,\
+                                runtime_context:PipelineRuntimeContext,\
+                                linked_services:List[LinkedService],\
+                                is_use_fqn:bool)->List[Edge]:
+    
+    lineage:List[Edge] = list()
+
+    for edge in static_pipeline.virtual_graph:
+        
+        generic_activity = static_pipeline.activities[edge.node_name]
 
         # will only support lineage if we support both input and output
 
-        if not (static_copy_activity.is_input_supported and static_copy_activity.is_output_supported):
+        if not (generic_activity.is_input_supported and generic_activity.is_output_supported):
             continue
 
-         # by common sense , we should only support single table dataset and location dataset as sink
+        # by common sense , we should only support single table dataset and location dataset as sink
 
-        if not(isinstance(static_copy_activity.output.info,SingleTableDataset) or\
-            isinstance(static_copy_activity.output.info,LocationDataset)):
+        if not isinstance(generic_activity.output_dataset.info,(SingleTableDataset,LocationDataset)):
             continue
-
-        source_table = get_source_tables(input_dataset=static_copy_activity.input.info,\
-                                         input_parameter_names=static_copy_activity.input_parameter_names,\
-                                        pipeline_parameters=pipeline_parameters,\
-                                        input_source_obj=activity_run.input["source"])
         
-
-        if is_use_fqn:
-
-            source_linked_service = find_linked_service(linked_services=linked_services,\
-                                search_linked_service_name=static_copy_activity.input.linked_service_name)
-                        
-            source_host_prefix = None
-            
-            if source_linked_service is not None:
-                source_host_prefix = get_linked_service_host_prefix(linked_service=source_linked_service)
-
-                if source_host_prefix is not None:
-                    source_table = {add_source_host_prefix(table_value=table_value,\
-                                                        host_prefix=source_host_prefix) for table_value in source_table}
-                    
-        target_table = get_target_table(output_dataset=static_copy_activity.output.info,\
-                                        output_parameter_names=static_copy_activity.output_parameter_names,\
-                                        pipeline_parameters=pipeline_parameters)
+        source_tables = resolve_source_table(activity=generic_activity,\
+                                             runtime=runtime_context,\
+                                             linked_services=linked_services,\
+                                             is_use_fqn=is_use_fqn)
         
-        if is_use_fqn:
-
-            target_linked_service = find_linked_service(linked_services=linked_services,\
-                                search_linked_service_name=static_copy_activity.output.linked_service_name)
-            
-            target_host_prefix = None
-            
-            if target_linked_service is not None:
-                target_host_prefix = get_linked_service_host_prefix(linked_service=target_linked_service)
-
-                if target_host_prefix is not None:
-                    target_table = add_source_host_prefix(table_value=target_table,\
-                                                        host_prefix=target_host_prefix)
-            
-
+        target_table = resolve_target_table(activity=generic_activity,\
+                                             runtime=runtime_context,\
+                                             linked_services=linked_services,\
+                                             is_use_fqn=is_use_fqn)
+        
         # we cannot add lineage when we cannot parse the sink 
 
         if target_table is None:
             continue
-
-        edge = Edge(
+        
+        new_edge = Edge(
             node_name=target_table,
-            parent_nodes=list(source_table)
+            parent_nodes=list(source_tables)
         )
 
+
         if len(lineage)==0:
-            lineage.append(edge)
+            lineage.append(new_edge)
 
         else:
-            #combine lineage based on multiple copy activity
+            #combine lineage based on multiple activity
+            lineage = merge_edge(left_edges=lineage,right_edges=[new_edge])
 
-            lineage = merge_edge(left_edges=lineage,right_edges=[edge])
-        
-    
+
     return lineage
 
 def to_open_lineage(namespace:str,producer:str,pipeline_lineage:PipelineLineage)->Tuple[Dict[str,Any],Dict[str,Any]]:
     
-    start_time = datetime.now().isoformat()
+    start_time = datetime.now(timezone.utc).isoformat()
 
-    end_time = datetime.now().isoformat()
+    end_time = datetime.now(timezone.utc).isoformat()
 
     run_id = str(uuid.uuid4())
 
@@ -577,6 +513,61 @@ def to_open_lineage(namespace:str,producer:str,pipeline_lineage:PipelineLineage)
 
     return (start_job_event,complete_job_event)
 
+def get_runtime_context(client:AzureClient,\
+                        pipeline_run:APIPipelineRun)->PipelineRuntimeContext:
+    
+    activity_source_inputs: Dict[str, Dict[str, Any]] = dict()
+
+    activities_run = client.get_activities_run(pipeline_run=pipeline_run)
+
+    pipeline_parameters:Dict[str,str] = dict()
+
+    if pipeline_run.parameters is not None:
+        pipeline_parameters = pipeline_run.parameters
+
+    for activity_run in activities_run:
+
+        if get_activity_type(activity_run.activity_type) == ActivityType.Copy and\
+            activity_run.input:
+
+            activity_source_inputs[activity_run.activity_name] = activity_run.input.get("source", {})
+
+    return PipelineRuntimeContext(
+        pipeline_name=pipeline_run.pipeline_name,\
+        run_id=pipeline_run.run_id,\
+        run_start=pipeline_run.run_start,\
+        run_end=pipeline_run.run_end,
+        pipeline_parameters=pipeline_parameters,\
+        activity_source_inputs=activity_source_inputs
+    )
+
+def get_static_pipeline(pipeline:APIPipelineResource,\
+                        datasets:List[Dataset])->StaticPipeline:
+
+    virtual_graph = get_virtual_graph(activities=to_activities(raw_activities=pipeline.activities))
+
+    generic_activities:Dict[str,GenericActivity] = dict()
+
+    expanded_activities = expand_activities(raw_activities=pipeline.activities)
+
+    for edge in virtual_graph:
+
+        activity = expanded_activities.get(edge.node_name)   
+
+        if activity is None:
+            continue
+
+        generic_activity = get_generic_activity(raw_activity=activity,\
+                                                    datasets=datasets)
+            
+        generic_activities[activity.name] = generic_activity
+    
+    return StaticPipeline(
+        pipeline_name=pipeline.name,\
+        virtual_graph=virtual_graph,\
+        activities=generic_activities
+    )
+
 def main()->int:
 
     client = get_api_client()
@@ -591,6 +582,7 @@ def main()->int:
     else:
         logger.info("Extracting datasets:success")
 
+    
     logger.info("Extracting linked service:")
 
     linked_services = get_linked_service(client=client)
@@ -600,55 +592,59 @@ def main()->int:
         return 1
     else:
         logger.info("Extracting linked service:success")
-
+    
     logger.info("Extracting pipeline:")
 
-    raw_pipeline = client.get_pipelines()
+    raw_pipelines = client.get_pipelines()
 
-    if raw_pipeline is None:
+    if raw_pipelines is None:
         logger.info("Extracting pipeline:fail")
         return 1
     else:
         logger.info("Extracting pipeline:success")
 
+    logger.info("Extracting lineage:")
 
+    static_pipelines:Dict[str,StaticPipeline] = dict()
 
-    raw_pipeline_names = [x.name for x in raw_pipeline]
+    for pipeline in raw_pipelines:
+
+        static_pipeline = get_static_pipeline(pipeline=pipeline,\
+                                              datasets=datasets)    
         
-    pipelines = get_copy_pipelines(pipeline_resources=raw_pipeline,\
-        datasets=datasets)
-    
-    processed_pipeline:Set[str] = set()
+        if len(static_pipeline.activities)==0:
+            continue
+
+        static_pipelines[pipeline.name] = static_pipeline
+
+    runtime_contexts:Dict[str,PipelineRuntimeContext] = dict()
+
+    for pipeline_name in static_pipelines:
+
+        latest_pipeline_info = get_latest_pipeline_info(pipeline_runs=client.get_pipeline_runs(pipeline_name=pipeline_name,\
+                                                                        days=DAYS_SEARCH))
+        
+        if latest_pipeline_info is None:
+            continue
+
+        runtime_context = get_runtime_context(client=client,\
+                                              pipeline_run=latest_pipeline_info)
+        
+        runtime_contexts[runtime_context.pipeline_name] = runtime_context
 
     pipeline_lineage:List[PipelineLineage] = list()
 
-    logger.info("Extracting lineage:")
+    for pipeline_name in runtime_contexts:
+                
+        lineage = get_pipeline_table_lineage(static_pipeline=static_pipelines[pipeline_name],\
+                                              runtime_context=runtime_contexts[pipeline_name],\
+                                              linked_services=linked_services,\
+                                              is_use_fqn=IS_USE_FQN)
 
-    for x in raw_pipeline_names:
-
-        for pipeline_run in get_latest_pipeline_info(pipeline_runs= client.get_pipeline_runs(pipeline_name=x,\
-                                                                                    days=DAYS_SEARCH)):
-            
-            # this is hacked. There should be only 1 single pipeline run but where it have multiple pipeline for the same pipeline name
-            if pipeline_run.pipeline_name in processed_pipeline:
-                continue
-            
-            pipeline_info = [x for x in pipelines if x.pipeline_name==pipeline_run.pipeline_name][0]
-
-            lineage = get_pipeline_table_lineage(client=client,\
-                                         pipeline_run=pipeline_run,\
-                                        pipeline_info=pipeline_info,\
-                                        linked_services=linked_services,\
-                                        is_use_fqn=IS_USE_FQN)
-        
-            pipeline_lineage.append(
-                PipelineLineage(
-                    pipeline_name=pipeline_info.pipeline_name,\
-                    lineage=lineage
-                )
-            )
-
-            processed_pipeline.add(pipeline_run.pipeline_name)
+        pipeline_lineage.append(PipelineLineage(
+                            pipeline_name=pipeline_name,\
+                            lineage=lineage)
+                            )
     
     logger.info("Extracting lineage:success")
 
@@ -690,7 +686,7 @@ def main()->int:
         logger.info(f"Saving lineage to {LINEAGE_OUTPUT_FILE_PATH}:fail")
 
         return 1
-
+    
     return 0
 
 if __name__=="__main__":

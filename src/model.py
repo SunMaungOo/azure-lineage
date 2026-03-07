@@ -76,26 +76,9 @@ class LinkedService:
     info:ProcessLinkedService
 
 @dataclass
-class CopyActivity:
-    #activity name
-    name:str
-    input:Optional[Dataset]
-    output:Optional[Dataset]
-    input_parameter_names:List[str]
-    output_parameter_names:List[str]
-    is_input_supported:bool
-    is_output_supported:bool
-
-@dataclass
-class Pipeline:
-    pipeline_name:str
-    copy_activities:List[CopyActivity]
-
-@dataclass
 class PipelineLineage:
     pipeline_name:str
     lineage:List[Edge]
-
 
 
 @dataclass
@@ -145,7 +128,6 @@ class APIActivityRun:
     input:Any
 
 
-
 class ActivityType(Enum):
     Copy = 1
     Procedure = 2
@@ -167,14 +149,42 @@ class Activity:
     body_children:List["Activity"] = field(default_factory=list)
 
 
-
 @dataclass(frozen=True)
 class Resolved:
-    value: str
+    value:str
 
 @dataclass(frozen=True)
 class Unresolved:
-    expression: str
-    reason:     str
+    expression:str
+    reason:str
 
 ParameterValue = Resolved | Unresolved
+
+@dataclass
+class PipelineRuntimeContext:
+    pipeline_name:str
+    run_id:str
+    run_start:datetime
+    run_end:datetime
+    pipeline_parameters:Dict[str,str]
+    # key : activity_name
+    # value : source dict from the activity run input
+    activity_source_inputs: Dict[str, Dict[str, Any]]
+
+@dataclass
+class GenericActivity:
+    name:str
+    activity_type:ActivityType
+    input_dataset:Optional[Dataset]
+    output_dataset:Optional[Dataset]
+    input_dataset_parameters:List[str]
+    output_dataset_parameters:List[str]
+    is_input_supported:bool
+    is_output_supported:bool
+
+@dataclass
+class StaticPipeline:
+    pipeline_name:str
+    virtual_graph:List[Edge]
+    # key = activity name
+    activities:Dict[str,GenericActivity]
