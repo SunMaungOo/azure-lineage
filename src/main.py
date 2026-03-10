@@ -1,6 +1,5 @@
 from typing import Dict,List,Set,Optional,Any,Tuple
-from copy import deepcopy
-from lineage import get_sql_lineage
+from lineage import get_sql_lineage,clean_sql
 from graph import Edge,merge_edge
 from model import (
     DatasetType,
@@ -324,7 +323,7 @@ def resolve_source_table(activity:GenericActivity,\
          
         #ignore when we cannot parse the sql 
         try:
-            source_tables = get_sql_lineage(sql=sql)
+            source_tables = get_sql_lineage(sql=clean_sql(sql=sql))
         except Exception:
 
             logger.warning(

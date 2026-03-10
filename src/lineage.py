@@ -1,9 +1,9 @@
 from sqlglot.expressions import Expression
 from sqlglot import parse_one,exp
 from typing import Set
-import sqlglot
 
-
+def clean_sql(sql:str)->str:
+    return sql.replace("[","").replace("]","")
 
 def get_sql_lineage(sql:str,dialect:str=None)->Set[str]:
     """
