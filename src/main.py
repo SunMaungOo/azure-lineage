@@ -38,17 +38,18 @@ import sys
 from dataclasses import asdict
 from core import to_activities,get_virtual_graph,get_activity_type,resolve_table_expression,expand_activities
 from util import has_field
+from formatter import LogFormatter
 
 logger = logging.getLogger("azure-lineage")
 
 logger.setLevel(logging.DEBUG)
-
 logger.propagate = False
 
-formatter = logging.Formatter(
+formatter = LogFormatter(
     fmt='%(asctime)s | %(levelname)-8s | %(name)-15s | %(lineno)-3d | %(message)s',
     datefmt='%Y-%m-%dT%H:%M:%S.%fZ'  # ISO 8601 with microseconds → Z for UTC
 )
+
 
 console_handler = logging.StreamHandler()
 console_handler.setLevel(logging.INFO)
@@ -268,6 +269,12 @@ def resolve_source_table(activity:GenericActivity,\
             
     source_tables:Set[str] = set()
 
+    log_context = {
+        "pipeline": runtime.pipeline_name,
+        "activity": activity.name,
+        "dataset": input_dataset.name,
+    }
+
     if isinstance(input_dataset_info,SingleTableDataset):
 
         dataset_parameters = {
@@ -282,7 +289,16 @@ def resolve_source_table(activity:GenericActivity,\
                                                    pipeline_parameters=runtime.pipeline_parameters)
                 
         if table_reference is None:
-            logger.warning(f"Could not resolve source table for dataset {input_dataset.name}")
+
+            logger.warning(
+                "source table resolution failed",
+                extra={
+                    "event": "source_table_resolution_failed",
+                    **log_context
+                }
+            )
+            
+
         else:
             source_tables.add(table_reference)
 
@@ -293,6 +309,14 @@ def resolve_source_table(activity:GenericActivity,\
         # if it is null , it mean the activity is not run so we cannot get any information about it (activity have failed,skipped).
         # essential we cannot get the runtime information for it
         if input_source_obj is None:
+
+            logger.warning(
+                "sql script not available",
+                 extra={
+                    "event": "sql_script_missing",
+                    **log_context
+                }
+            )
             return set()
 
         sql = get_sql_script(input_source_obj=input_source_obj,\
@@ -302,6 +326,15 @@ def resolve_source_table(activity:GenericActivity,\
         try:
             source_tables = get_sql_lineage(sql=sql)
         except Exception:
+
+            logger.warning(
+                "sql lineage parsing failed",
+                extra={
+                    "event": "sql_parse_failed",
+                    **log_context
+                }
+            )
+
             return set()
 
     elif isinstance(input_dataset_info,LocationDataset):
@@ -348,7 +381,14 @@ def resolve_target_table(activity:GenericActivity,\
                                                    pipeline_parameters=runtime.pipeline_parameters)
                 
         if target_table is None:
-             logger.warning(f"Could not resolve target table for dataset {output_dataset.name}")
+             
+             logger.warning("Target table resolution failed",
+                            extra={
+                                "event":"target_table_resolution_failed",
+                                "pipeline":runtime.pipeline_name,
+                                "activity":activity.name,
+                                "dataset":output_dataset.name
+                            })
 
     elif isinstance(output_dataset_info,LocationDataset):
         target_table=output_dataset_info.location
