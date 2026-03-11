@@ -177,8 +177,8 @@ class GenericActivity:
     activity_type:ActivityType
     input_dataset:Optional[Dataset]
     output_dataset:Optional[Dataset]
-    input_dataset_parameters:List[str]
-    output_dataset_parameters:List[str]
+    input_dataset_parameters:Dict[str,Parameter]
+    output_dataset_parameters:Dict[str,Parameter]
     is_input_supported:bool
     is_output_supported:bool
 
@@ -188,3 +188,7 @@ class StaticPipeline:
     virtual_graph:List[Edge]
     # key = activity name
     activities:Dict[str,GenericActivity]
+
+AZURE_PARAMETER_TYPES = str | int | float | bool
+
+AZURE_PARAMETER_TYPES_TUPLE = (str,int,float,bool)

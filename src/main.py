@@ -36,7 +36,7 @@ import logging
 import sys
 from dataclasses import asdict
 from core import to_activities,get_virtual_graph,get_activity_type,resolve_table_expression,expand_activities
-from util import has_field
+from util import has_field,create_parameter
 from formatter import LogFormatter
 
 logger = logging.getLogger("azure-lineage")
@@ -181,15 +181,20 @@ def get_generic_activity(raw_activity:Any,\
 
     is_output_supported = not(output_dataset is None or output_dataset.type==DatasetType.Unsupported)
 
-    input_dataset_parameters:List[str] = list()
+    input_dataset_parameters:Dict[str,Parameter] = dict()
 
     if raw_activity.inputs[0].parameters is not None:
-        input_dataset_parameters =  [x for x in raw_activity.inputs[0].parameters]
 
-    output_dataset_parameters:List[str] = list()
+        for parameter_name in raw_activity.inputs[0].parameters:
+            input_dataset_parameters[parameter_name] = create_parameter(raw_activity.inputs[0].parameters[parameter_name])
+
+    output_dataset_parameters:Dict[str,Parameter] = dict()
 
     if raw_activity.outputs[0].parameters is not None:
-        output_dataset_parameters =  [x for x in raw_activity.outputs[0].parameters]
+
+        for parameter_name in raw_activity.outputs[0].parameters:
+            output_dataset_parameters[parameter_name] = create_parameter(raw_activity.outputs[0].parameters[parameter_name])
+
 
     if not is_input_supported:
         input_dataset = None
@@ -276,17 +281,28 @@ def resolve_source_table(activity:GenericActivity,\
 
     if isinstance(input_dataset_info,SingleTableDataset):
 
-        dataset_parameters = {
+        static_dataset_parameters = {
+            name:activity.input_dataset_parameters[name].value
+            for name in activity.input_dataset_parameters
+            if activity.input_dataset_parameters[name].parameter_type==ParameterType.Static
+        }
+
+        # try to fill out dataset parameter with pipeline parameter value if it is and expression type
+
+        expression_dataset_parameters = {
             name:runtime.pipeline_parameters[name]
             for name in activity.input_dataset_parameters
-            if name in runtime.pipeline_parameters
+            if name in runtime.pipeline_parameters\
+            and activity.input_dataset_parameters[name].parameter_type==ParameterType.Expression
         }
+
+        dataset_parameters  = {**static_dataset_parameters,**expression_dataset_parameters}
 
         table_reference = resolve_table_expression(schema_expression=input_dataset_info.schema.value,\
                                                    table_expression=input_dataset_info.table.value,\
                                                    dataset_parameters=dataset_parameters,
                                                    pipeline_parameters=runtime.pipeline_parameters)
-                
+
         if table_reference is None:
 
             logger.warning(
