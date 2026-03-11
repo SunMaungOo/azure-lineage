@@ -10,6 +10,7 @@ from core import (
     resolve_table_expression
 )
 from typing import List
+from lineage import clean_sql,get_sql_lineage
 
 # virtual-dom test
 
@@ -608,6 +609,18 @@ def test_table_expression_schema_from_dataset_whole():
         dataset_parameters={"schema": "sales"}, pipeline_parameters={}
     ) == "sales.orders"
 
+
+def test_get_sql_lineage_bracket():
+    sql = """
+
+    SELECT [A],
+    [B]
+    FROM [foo].[bar]
+    """
+
+    assert "foo.bar" in get_sql_lineage(sql=clean_sql(sql=sql))
+
+    
 
 def run_all_test():
 
