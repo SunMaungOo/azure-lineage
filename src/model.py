@@ -45,7 +45,9 @@ class SingleTableDataset:
 class LocationDataset:
     name:str
     type:DatasetType
-    location:str
+    container:Optional[Parameter]
+    folder_path:Optional[Parameter]
+    file_name:Optional[Parameter]
 
 ProcessDataset = Union[QueryDataset,SingleTableDataset,LocationDataset]
 

@@ -35,7 +35,15 @@ from pathlib import Path
 import logging
 import sys
 from dataclasses import asdict
-from core import to_activities,get_virtual_graph,get_activity_type,resolve_table_expression,expand_activities
+from core import (
+    to_activities,
+    get_virtual_graph,
+    get_activity_type,
+    resolve_table_expression,
+    expand_activities,
+    resolve_blob_expression,
+    normalize_blob_path
+)
 from util import has_field,create_parameter
 from formatter import LogFormatter
 
@@ -353,7 +361,22 @@ def resolve_source_table(activity:GenericActivity,\
             return set()
 
     elif isinstance(input_dataset_info,LocationDataset):
-        source_tables.add(input_dataset_info.location)
+
+
+        blob_location = resolve_blob_expression(container=input_dataset_info.container,\
+                                                folder_path=input_dataset_info.folder_path,\
+                                                file_name=input_dataset_info.file_name,\
+                                                dataset_parameters=dataset_parameters,\
+                                                pipeline_parameters=runtime.pipeline_parameters)
+        
+        if blob_location is None:
+            logger.warning("Source blob resolution failed",
+                           extra={
+                                "event":"source_blob_resolution_failed",
+                                **log_context
+                            })
+        else:
+            source_tables.add(normalize_blob_path(raw_blob_path=blob_location))
 
     if is_use_fqn and len(source_tables)>0:
 
@@ -382,13 +405,28 @@ def resolve_target_table(activity:GenericActivity,\
 
     target_table = None
 
-    if isinstance(output_dataset_info,SingleTableDataset):
+    static_dataset_parameters = {
+        name:activity.output_dataset_parameters[name].value
+        for name in activity.output_dataset_parameters
+        if activity.output_dataset_parameters[name].parameter_type==ParameterType.Static
+    }
 
-        dataset_parameters = {
-            name:runtime.pipeline_parameters[name]
-            for name in activity.output_dataset_parameters
-            if name in runtime.pipeline_parameters
-        }
+    expression_dataset_parameters = {
+        name:runtime.pipeline_parameters[name]
+        for name in activity.output_dataset_parameters
+        if name in runtime.pipeline_parameters\
+        and activity.output_dataset_parameters[name].parameter_type==ParameterType.Expression
+    }
+
+    dataset_parameters  = {**static_dataset_parameters,**expression_dataset_parameters}
+
+    log_context = {
+        "pipeline": runtime.pipeline_name,
+        "activity": activity.name,
+        "dataset": output_dataset.name,
+    }
+
+    if isinstance(output_dataset_info,SingleTableDataset):
 
         target_table = resolve_table_expression(schema_expression=output_dataset_info.schema.value,\
                                                    table_expression=output_dataset_info.table.value,\
@@ -400,14 +438,26 @@ def resolve_target_table(activity:GenericActivity,\
              logger.warning("Target table resolution failed",
                             extra={
                                 "event":"target_table_resolution_failed",
-                                "pipeline":runtime.pipeline_name,
-                                "activity":activity.name,
-                                "dataset":output_dataset.name
+                                **log_context
                             })
 
     elif isinstance(output_dataset_info,LocationDataset):
-        target_table=output_dataset_info.location
 
+        blob_location = resolve_blob_expression(container=output_dataset_info.container,\
+                                                folder_path=output_dataset_info.folder_path,\
+                                                file_name=output_dataset_info.file_name,\
+                                                dataset_parameters=dataset_parameters,\
+                                                pipeline_parameters=runtime.pipeline_parameters)
+          
+        if blob_location is None:
+            logger.warning("Target blob resolution failed",
+                           extra={
+                                "event":"target_blob_resolution_failed",
+                                **log_context
+                            })
+            
+        else:
+            target_table = normalize_blob_path(raw_blob_path=blob_location)
 
     if is_use_fqn and target_table is not None:
 
@@ -671,6 +721,7 @@ def main()->int:
             continue
 
         static_pipelines[pipeline.name] = static_pipeline
+
 
     runtime_contexts:Dict[str,PipelineRuntimeContext] = dict()
 

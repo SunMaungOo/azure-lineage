@@ -27,6 +27,23 @@ ACTIVITY_TYPE_MAP:Dict[str,ActivityType] = {
     "Until":ActivityType.While
 }
 
+BLOB_PARTITION_PATTERN = re.compile(
+   # handle hive-based style pattern like year=yyyy/month=mm 
+   r"(/year=\d{4}.*|" 
+   # handle date path patern yyyy/mm/dd 
+   r"/\d{4}/\d{2}/\d{2}.*)"
+)
+
+BLOB_TRAILING_FILE_PATTERN = re.compile(r"/[^/]+\.[^/]+$")
+
+# for removing _yyyy_mm_dd date suffix from a file name
+
+BLOB_DATE_SUFFIX_PATTERN = re.compile(r"_\d{4}_\d{2}_\d{2}")
+
+# for removing file extension of last path segment 
+
+BLOB_FILE_EXTENSION_PATTERN = re.compile(r"\.[^./]+$")
+
 def get_activity_type(raw_activity_type:str)->ActivityType:
     
     if raw_activity_type in ACTIVITY_TYPE_MAP:
@@ -391,3 +408,68 @@ def resolve_table_expression(schema_expression:str,
 
     return f"{schema.value}.{table.value}"
 
+def resolve_parameter(parameter:Optional[ParameterValue],\
+                      dataset_parameters:Dict[str, str],\
+                      pipeline_parameters:Dict[str, str])->Optional[str]:
+    
+    if parameter is None:
+        return None
+    
+    result = resolve_expression(expression=parameter.value,\
+                       dataset_parameters=dataset_parameters,\
+                       pipeline_parameters=pipeline_parameters)
+    
+    if isinstance(result,Resolved):
+        return result.value
+    
+    return None
+
+def resolve_blob_expression(container:Optional[ParameterValue],\
+                      folder_path:Optional[ParameterValue],\
+                      file_name:Optional[ParameterValue],\
+                      dataset_parameters:Dict[str, str],\
+                      pipeline_parameters:Dict[str, str])->Optional[str]:
+    
+    resolved_container = resolve_parameter(parameter=container,\
+                                           dataset_parameters=dataset_parameters,\
+                                           pipeline_parameters=pipeline_parameters)
+
+    resolved_folder_path = resolve_parameter(parameter=folder_path,\
+                                            dataset_parameters=dataset_parameters,\
+                                            pipeline_parameters=pipeline_parameters)
+
+    resolved_file_name = resolve_parameter(parameter=file_name,\
+                                           dataset_parameters=dataset_parameters,\
+                                           pipeline_parameters=pipeline_parameters)
+
+    parts = [x for x in [resolved_container,resolved_folder_path,resolved_file_name] if x is not None]
+
+    if len(parts)>0:
+        return "/".join(parts)
+    
+    return None
+
+def normalize_blob_path(raw_blob_path:str)->str:
+    """
+    Return the blob path which is normalize to logical folder like
+
+    container/data/year=YYYY/month=MM/day=MM/data.ext = container/data
+
+    container/data/YYYY/MM/DD/data.ext = container/data
+
+    for non date pattern like container/folder/data/data.ext = container/folder/data
+
+    container/data.ext = container/data
+
+    container/data_part_YYYY_MM_DD.ext = container/data_part
+    """
+    blob_path = BLOB_PARTITION_PATTERN.sub("",raw_blob_path).rstrip("/")
+
+    if blob_path.count("/")>1:
+        blob_path = BLOB_TRAILING_FILE_PATTERN.sub("",blob_path).rstrip("/")
+
+    blob_path = BLOB_DATE_SUFFIX_PATTERN.sub("",blob_path)
+
+    blob_path = BLOB_FILE_EXTENSION_PATTERN.sub("",blob_path)
+
+    return blob_path.rstrip("/")

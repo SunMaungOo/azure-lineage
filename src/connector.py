@@ -95,14 +95,31 @@ def get_dataset_info(dataset_resource:DatasetResource,\
                                      table=table)
            
     elif dataset_type==DatasetType.Blob:
-        #use the dataset name as blob location
+
+        location = dataset_resource.properties.location
+
+        container = None
+
+        folder_path = None
+
+        file_nane = None
+
+        if has_field(location,"container"):
+            container = create_parameter(parameter_value=location.container)
+
+        if has_field(location,"folder_path"):
+            folder_path = create_parameter(parameter_value=location.folder_path)
+
+        if has_field(location,"file_name"):
+            file_nane = create_parameter(parameter_value=location.file_name)
 
         info = LocationDataset(
             name=dataset_name,\
             type=dataset_type,\
-            location=dataset_name
+            container=container,\
+            folder_path=folder_path,\
+            file_name=file_nane
         )
-
 
     return info
 

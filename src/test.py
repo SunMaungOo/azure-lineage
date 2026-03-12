@@ -7,7 +7,8 @@ from core import (
     get_activities_type,
     get_virtual_graph,
     resolve_expression,
-    resolve_table_expression
+    resolve_table_expression,
+    normalize_blob_path
 )
 from typing import List
 from lineage import clean_sql,get_sql_lineage
@@ -620,7 +621,20 @@ def test_get_sql_lineage_bracket():
 
     assert "foo.bar" in get_sql_lineage(sql=clean_sql(sql=sql))
 
-    
+def test_normalize_blob_path_hive_pattern():
+    assert normalize_blob_path(raw_blob_path="container/data/year=2020/month=10/date=11/test.ext") == "container/data"
+
+def test_normalize_blob_path_date_pattern():
+    assert normalize_blob_path(raw_blob_path="container/data/2020/10/11/test.ext") == "container/data"
+
+def test_normalize_blob_path_folder_pattern():
+    assert normalize_blob_path(raw_blob_path="container/folder/data/data.ext") == "container/folder/data"
+
+def test_normalize_blob_path_single_folder_with_date():
+    assert normalize_blob_path(raw_blob_path="container/data_part_2020_10_11.parquet") == "container/data_part"
+
+def test_normalize_blob_path_single_folder_without_date():
+    assert normalize_blob_path(raw_blob_path="container/data.parquet") == "container/data"    
 
 def run_all_test():
 
