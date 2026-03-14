@@ -42,7 +42,8 @@ from core import (
     resolve_table_expression,
     expand_activities,
     resolve_blob_expression,
-    normalize_blob_path
+    normalize_blob_path,
+    resolve_dataset_parameter
 )
 from util import has_field,create_parameter
 from formatter import LogFormatter
@@ -287,24 +288,10 @@ def resolve_source_table(activity:GenericActivity,\
         "dataset": input_dataset.name,
     }
 
+    dataset_parameters = resolve_dataset_parameter(dataset_parameters=activity.input_dataset_parameters,\
+                            pipeline_parameter=runtime.pipeline_parameters)
+
     if isinstance(input_dataset_info,SingleTableDataset):
-
-        static_dataset_parameters = {
-            name:activity.input_dataset_parameters[name].value
-            for name in activity.input_dataset_parameters
-            if activity.input_dataset_parameters[name].parameter_type==ParameterType.Static
-        }
-
-        # try to fill out dataset parameter with pipeline parameter value if it is and expression type
-
-        expression_dataset_parameters = {
-            name:runtime.pipeline_parameters[name]
-            for name in activity.input_dataset_parameters
-            if name in runtime.pipeline_parameters\
-            and activity.input_dataset_parameters[name].parameter_type==ParameterType.Expression
-        }
-
-        dataset_parameters  = {**static_dataset_parameters,**expression_dataset_parameters}
 
         table_reference = resolve_table_expression(schema_expression=input_dataset_info.schema.value,\
                                                    table_expression=input_dataset_info.table.value,\
@@ -388,7 +375,11 @@ def resolve_source_table(activity:GenericActivity,\
             source_host_prefix = get_linked_service_host_prefix(linked_service=linked_service)
 
             if source_host_prefix is not None:
-                source_tables = {add_source_host_prefix(table_value=table,host_prefix=source_host_prefix) for table in source_tables}
+                source_tables = {
+                    add_source_host_prefix(table_value=table,\
+                                           host_prefix=source_host_prefix) 
+                    for table in source_tables
+                }
 
     
     return source_tables
@@ -405,20 +396,9 @@ def resolve_target_table(activity:GenericActivity,\
 
     target_table = None
 
-    static_dataset_parameters = {
-        name:activity.output_dataset_parameters[name].value
-        for name in activity.output_dataset_parameters
-        if activity.output_dataset_parameters[name].parameter_type==ParameterType.Static
-    }
 
-    expression_dataset_parameters = {
-        name:runtime.pipeline_parameters[name]
-        for name in activity.output_dataset_parameters
-        if name in runtime.pipeline_parameters\
-        and activity.output_dataset_parameters[name].parameter_type==ParameterType.Expression
-    }
-
-    dataset_parameters  = {**static_dataset_parameters,**expression_dataset_parameters}
+    dataset_parameters = resolve_dataset_parameter(dataset_parameters=activity.output_dataset_parameters,\
+                              pipeline_parameter=runtime.pipeline_parameters)
 
     log_context = {
         "pipeline": runtime.pipeline_name,

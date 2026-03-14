@@ -1,4 +1,4 @@
-from model import Activity,ActivityType,ParameterValue,Resolved,Unresolved
+from model import Activity,ActivityType,ParameterValue,Resolved,Unresolved,Parameter,ParameterType
 from typing import List,Dict,Optional,Any,Set
 from graph import Edge,merge_edge,replace_node_with_edge,remove_node,get_node_names
 import re
@@ -282,6 +282,18 @@ def get_virtual_graph(activities:List[Activity])->List[Edge]:
 def resolve_expression(expression:str,\
                        dataset_parameters:Dict[str, str],\
                        pipeline_parameters:Dict[str, str])->ParameterValue:
+    """
+    Resolve the expression on dataset_parameters and pipeline_parameters. 
+    It could not resolve the adf functions and return Unresolved
+
+    expression : to resolve. It could be 
+     static value :  foo 
+     dataset parameter : @dataset().foo ,
+     pipeline paramter : @pipeline().parameters.foo 
+     interpolated expression : @{dataset().foo} , @{pipeline().parameters.foo}
+    dataset_parameters (parameter_name,value) : value to replace it with
+    pipeline_parameters (parameter_name,value) : value to replace it with
+    """
 
     if expression is None:
 
@@ -462,6 +474,8 @@ def normalize_blob_path(raw_blob_path:str)->str:
     container/data.ext = container/data
 
     container/data_part_YYYY_MM_DD.ext = container/data_part
+
+    data.ext = data.ext
     """
     blob_path = BLOB_PARTITION_PATTERN.sub("",raw_blob_path).rstrip("/")
 
@@ -473,3 +487,54 @@ def normalize_blob_path(raw_blob_path:str)->str:
     blob_path = BLOB_FILE_EXTENSION_PATTERN.sub("",blob_path)
 
     return blob_path.rstrip("/")
+
+def resolve_dataset_parameter(dataset_parameters:Dict[str,Parameter],\
+                          pipeline_parameter:Dict[str,str])->Dict[str,str]:
+    """
+    Resolve the dataset_parameters with pipeline_parameter
+    """
+    
+    # for the static dataset parameter , we just use it dataset parameter without modifying anythong
+
+    static_dataset_parameters = {
+        parameter_name:dataset_parameters[parameter_name].value
+        for parameter_name in dataset_parameters
+        if dataset_parameters[parameter_name].parameter_type==ParameterType.Static
+    }
+
+    # for the expression dataset parameter , if there is the same parameter name in pipeline_parameter , we use pipeline_parameter name
+
+    expression_dataset_parameters = {
+        parameter_name:pipeline_parameter[parameter_name]
+        for parameter_name in dataset_parameters
+        if parameter_name in pipeline_parameter\
+        and dataset_parameters[parameter_name].parameter_type==ParameterType.Expression
+    }
+
+    unresolved_dataset_parameters = {
+        parameter_name:dataset_parameters[parameter_name]
+        for parameter_name in dataset_parameters
+        if dataset_parameters[parameter_name].parameter_type==ParameterType.Expression and\
+        parameter_name not in pipeline_parameter
+    }
+
+    # resolve the dataset parameter using the pipeline parameter
+
+    resolved_dataset_parameter_result = { 
+        parameter_name : resolve_expression(expression=unresolved_dataset_parameters[parameter_name].value,\
+                                            dataset_parameters=dict(),\
+                                            pipeline_parameters=pipeline_parameter)
+        for parameter_name in unresolved_dataset_parameters 
+    }
+
+    # get the resolved result
+    
+    resolved_dataset_parameter = {
+        parameter_name:resolved_dataset_parameter_result[parameter_name].value 
+        for parameter_name in resolved_dataset_parameter_result 
+        if isinstance(resolved_dataset_parameter_result[parameter_name],Resolved)
+    }
+
+    return {**static_dataset_parameters,\
+            **expression_dataset_parameters,\
+            **resolved_dataset_parameter}

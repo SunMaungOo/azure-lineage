@@ -1,4 +1,4 @@
-from model import Activity, ActivityType,Resolved,Unresolved
+from model import Activity, ActivityType,Resolved,Unresolved,Parameter,ParameterType
 from graph import get_node_names,get_parent_nodes
 from core import (
     branch_to_edges,
@@ -8,9 +8,10 @@ from core import (
     get_virtual_graph,
     resolve_expression,
     resolve_table_expression,
-    normalize_blob_path
+    normalize_blob_path,
+    resolve_dataset_parameter
 )
-from typing import List
+from typing import List,Dict
 from lineage import clean_sql,get_sql_lineage
 
 # virtual-dom test
@@ -635,6 +636,23 @@ def test_normalize_blob_path_single_folder_with_date():
 
 def test_normalize_blob_path_single_folder_without_date():
     assert normalize_blob_path(raw_blob_path="container/data.parquet") == "container/data"    
+
+def test_resolve_blob():
+
+    parameter_to_resolve:Dict[str,Parameter] = dict()
+    parameter_to_resolve["file_name"] = Parameter(value="@pipeline().parameters.source_file_name",\
+                                                parameter_type=ParameterType.Expression)
+
+    pipeline_parameter:Dict[str,str] = dict()
+    pipeline_parameter["source_file_name"] = "data.ext"
+
+
+    dataset_parameters = resolve_dataset_parameter(dataset_parameters=parameter_to_resolve,\
+                                                   pipeline_parameter=pipeline_parameter)
+
+    
+    assert dataset_parameters == {"file_name":"data.ext"}
+
 
 def run_all_test():
 
