@@ -65,6 +65,8 @@ console_handler.setFormatter(formatter)
 
 logger.addHandler(console_handler)
 
+logging.getLogger("azure.mgmt.datafactory").setLevel(logging.ERROR)
+logging.getLogger("azure.synapse.artifacts").setLevel(logging.ERROR)
 
 def get_datasets(client:AzureClient)->Optional[List[Dataset]]:
 
@@ -615,7 +617,16 @@ def get_runtime_context(client:AzureClient,\
         if get_activity_type(activity_run.activity_type) == ActivityType.Copy and\
             activity_run.input:
 
-            activity_source_inputs[activity_run.activity_name] = activity_run.input.get("source", {})
+            source = activity_run.input.get("source", {})   
+
+            # if our SqlPoolSource has no mapping , it fall back to CopySource based type , source field is in additional_properties
+
+            if not source and has_field(activity_run.input,"additional_properties"):
+                source = activity_run.input.additional_properties.get("source",{})
+
+            if source:
+                activity_source_inputs[activity_run.activity_name] = source
+                
 
     return PipelineRuntimeContext(
         pipeline_name=pipeline_run.pipeline_name,\
