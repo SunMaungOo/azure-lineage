@@ -24,7 +24,9 @@ ACTIVITY_TYPE_MAP:Dict[str,ActivityType] = {
     "ExecutePipeline":ActivityType.Execute,
     "ForEach":ActivityType.ForEach,
     "IfCondition":ActivityType.If,
-    "Until":ActivityType.While
+    "Until":ActivityType.While,
+    "SqlPoolStoredProcedure":ActivityType.Procedure,
+    "SqlServerStoredProcedure":ActivityType.Procedure
 }
 
 BLOB_PARTITION_PATTERN = re.compile(

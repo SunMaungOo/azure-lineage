@@ -27,6 +27,8 @@ IS_USE_FQN  = config("IS_USE_FQN",default=True,cast=bool)
 
 LINEAGE_OUTPUT_FILE_PATH = config("LINEAGE_OUTPUT_FILE_PATH",default="lineage.json",cast=str)
 
+PLUGIN_FOLDER_PATH = config("PLUGIN_FOLDER_PATH",default="/plugins",cast=str)
+
 def get_api_client()->AzureClient:
     return AzureClient(azure_client_id=AZURE_CLIENT_ID,\
         azure_tenant_id=AZURE_TENANT_ID,\

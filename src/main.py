@@ -14,7 +14,6 @@ from model import (
     PipelineLineage,
     APIPipelineResource,
     APIPipelineRun,
-    APIActivityRun,
     LinkedService,
     LinkedServiceType,
     DatabaseLinkedService,
@@ -26,7 +25,7 @@ from model import (
 )
 from connector import get_sql_script,get_dataset_type,get_dataset_info,get_linked_service_info,get_linked_service_type
 from client import AzureClient
-from config import get_api_client,DAYS_SEARCH,OPENLINEAGE_NAMESPACE
+from config import get_api_client,DAYS_SEARCH,OPENLINEAGE_NAMESPACE,PLUGIN_FOLDER_PATH
 from config import OPENLINEAGE_OUTPUT_FILE_PATH,OPENLINEAGE_PRODUCER,IS_USE_FQN,LINEAGE_OUTPUT_FILE_PATH
 import uuid
 from datetime import datetime,timezone
@@ -47,6 +46,8 @@ from core import (
 )
 from util import has_field,create_parameter
 from formatter import LogFormatter
+from plugin import StoreProcedurePluginContext
+from pluginhelper import PluginWrapper,resolve_plugins,get_database_connections,load_plugins,register_plugins
 
 logger = logging.getLogger("azure-lineage")
 
@@ -55,7 +56,7 @@ logger.propagate = False
 
 formatter = LogFormatter(
     fmt='%(asctime)s | %(levelname)-8s | %(name)-15s | %(lineno)-3d | %(message)s',
-    datefmt='%Y-%m-%dT%H:%M:%S.%fZ'  # ISO 8601 with microseconds → Z for UTC
+    datefmt='%Y-%m-%dT%H:%M:%S'  # ISO 8601 with microseconds → Z for UTC
 )
 
 
@@ -165,12 +166,30 @@ def get_placeholder_activity(activity_name:str)->GenericActivity:
         input_dataset_parameters=list(),\
         output_dataset_parameters=list(),\
         is_input_supported=False,\
-        is_output_supported=False
+        is_output_supported=False,\
+        raw_activity=None
     )
 
 def get_generic_activity(raw_activity:Any,\
                          datasets:List[Dataset])->GenericActivity:
-    
+
+    activity_type = get_activity_type(raw_activity.type)
+
+    if activity_type==ActivityType.Procedure:
+
+        return GenericActivity(
+            name=raw_activity.name,
+            activity_type=ActivityType.Procedure,
+            input_dataset=None,
+            output_dataset=None,
+            input_dataset_parameters=list(),
+            output_dataset_parameters=list(),
+            is_input_supported=True,\
+            is_output_supported=False,\
+            raw_activity=raw_activity
+        )
+
+
     # something went wrong when there is no inputs and output
 
     if not has_field(raw_activity,"inputs") and not has_field(raw_activity,"outputs"):
@@ -215,13 +234,14 @@ def get_generic_activity(raw_activity:Any,\
 
     return GenericActivity(
         name=raw_activity.name,\
-        activity_type=get_activity_type(raw_activity.type),\
+        activity_type=activity_type,\
         input_dataset=input_dataset,\
         output_dataset=output_dataset,\
         input_dataset_parameters=input_dataset_parameters,\
         output_dataset_parameters=output_dataset_parameters,\
         is_input_supported=is_input_supported,\
-        is_output_supported=is_output_supported
+        is_output_supported=is_output_supported,\
+        raw_activity=raw_activity
     )
 
 
@@ -456,57 +476,106 @@ def resolve_target_table(activity:GenericActivity,\
                             
     return target_table
 
+def add_lineage(initial_lineage:List[Edge],\
+                sources:Set[str],\
+                target:str)->List[Edge]:
+
+    new_edge = Edge(
+        node_name=target,
+        parent_nodes=list(sources)
+    )
+
+    if len(initial_lineage)==0:
+        initial_lineage.append(new_edge)
+
+    else:
+        #combine lineage based on multiple activity
+        initial_lineage = merge_edge(left_edges=initial_lineage,\
+                                     right_edges=[new_edge])
+
+
+    return initial_lineage
 
 def get_pipeline_table_lineage(static_pipeline:StaticPipeline,\
                                 runtime_context:PipelineRuntimeContext,\
                                 linked_services:List[LinkedService],\
-                                is_use_fqn:bool)->List[Edge]:
+                                is_use_fqn:bool,\
+                                plugins:List[PluginWrapper])->List[Edge]:
     
     lineage:List[Edge] = list()
+
 
     for edge in static_pipeline.virtual_graph:
         
         generic_activity = static_pipeline.activities[edge.node_name]
 
-        # will only support lineage if we support both input and output
+        if generic_activity.activity_type==ActivityType.Procedure:
 
-        if not (generic_activity.is_input_supported and generic_activity.is_output_supported):
-            continue
+            procedure_context = get_procedure_context(procedure_activity=generic_activity.raw_activity,\
+                                            runtime_context=runtime_context)
 
-        # by common sense , we should only support single table dataset and location dataset as sink
+            if procedure_context is None:
+                continue
+            
+            if len(plugins)>0:
+                
+                linked_service_name = procedure_context.linked_service_name
 
-        if not isinstance(generic_activity.output_dataset.info,(SingleTableDataset,LocationDataset)):
-            continue
-        
-        source_tables = resolve_source_table(activity=generic_activity,\
-                                             runtime=runtime_context,\
-                                             linked_services=linked_services,\
-                                             is_use_fqn=is_use_fqn)
-        
-        target_table = resolve_target_table(activity=generic_activity,\
-                                             runtime=runtime_context,\
-                                             linked_services=linked_services,\
-                                             is_use_fqn=is_use_fqn)
-        
-        # we cannot add lineage when we cannot parse the sink 
+                linked_service = None
 
-        if target_table is None:
-            continue
-        
-        new_edge = Edge(
-            node_name=target_table,
-            parent_nodes=list(source_tables)
-        )
+                database_conection = None
+
+                if linked_service_name is not None:
+                    linked_service = find_linked_service(linked_services=linked_services,
+                                        search_linked_service_name=linked_service_name)
+                
+                if linked_service is not None:  
+                    database_conection = get_database_connections(linked_service=linked_service)
 
 
-        if len(lineage)==0:
-            lineage.append(new_edge)
+                for plugin_lineage in resolve_plugins(plugins=plugins,\
+                                context=procedure_context,\
+                                connection=database_conection):
+                    
+                    source_tables = plugin_lineage[0]
+
+                    target_table = plugin_lineage[1]
+
+                    lineage = add_lineage(initial_lineage=lineage,\
+                                          sources=source_tables,\
+                                          target=target_table)
 
         else:
-            #combine lineage based on multiple activity
-            lineage = merge_edge(left_edges=lineage,right_edges=[new_edge])
 
+            # will only support lineage if we support both input and output
 
+            if not (generic_activity.is_input_supported and generic_activity.is_output_supported):
+                continue
+
+            # by common sense , we should only support single table dataset and location dataset as sink
+
+            if not isinstance(generic_activity.output_dataset.info,(SingleTableDataset,LocationDataset)):
+                continue
+            
+            source_tables = resolve_source_table(activity=generic_activity,\
+                                                runtime=runtime_context,\
+                                                linked_services=linked_services,\
+                                                is_use_fqn=is_use_fqn)
+            
+            target_table = resolve_target_table(activity=generic_activity,\
+                                                runtime=runtime_context,\
+                                                linked_services=linked_services,\
+                                                is_use_fqn=is_use_fqn)
+        
+            # we cannot add lineage when we cannot parse the sink 
+
+            if target_table is None:
+                continue
+            
+            lineage = add_lineage(initial_lineage=lineage,\
+                                  sources=source_tables,\
+                                  target=target_table)
+            
     return lineage
 
 def to_open_lineage(namespace:str,producer:str,pipeline_lineage:PipelineLineage)->Tuple[Dict[str,Any],Dict[str,Any]]:
@@ -664,7 +733,68 @@ def get_static_pipeline(pipeline:APIPipelineResource,\
         activities=generic_activities
     )
 
+def get_procedure_context(procedure_activity:Any,
+                          runtime_context:PipelineRuntimeContext)->Optional[StoreProcedurePluginContext]:
+    
+    try:
+
+        procedure_name = procedure_activity.stored_procedure_name
+
+        procedure_parameters:Dict[str,str] = dict()
+
+        if has_field(procedure_activity,"stored_procedure_parameters"):
+            raw_parameters:Optional[Dict[str,Any]] = procedure_activity.stored_procedure_parameters
+
+            if raw_parameters is not None:
+
+                procedure_parameters = {
+                    key:str(value if has_field(value,"value") else value)
+                    for key,value in raw_parameters
+                }
+
+        linked_service_name = None
+
+        # for Azure Store Procedure
+
+        if has_field(procedure_activity,"linked_service_name") and\
+        procedure_activity.linked_service_name is not None:    
+            linked_service_name = procedure_activity.linked_service_name.reference_name
+        
+        # for sql pool
+
+        elif has_field(procedure_activity,"sql_pool") and\
+            procedure_activity.sql_pool is not None:
+            linked_service_name = procedure_activity.sql_pool.reference_name
+        
+
+        return StoreProcedurePluginContext(
+            activity_name=procedure_activity.name,\
+            linked_service_name=linked_service_name,\
+            procedure_name=procedure_name,\
+            procedure_parameters=procedure_parameters,\
+            pipeline_parameters=runtime_context.pipeline_parameters
+        )
+        
+    except Exception:
+
+        logger.warning(f"get store procedure context failed",extra={
+            "event":"get_store_procedure_context_failed",
+            "activity": procedure_activity.name
+        })
+
+        return None
+    
 def main()->int:
+
+    logger.info("Loading plugins:")
+
+    raw_plugins = load_plugins(logger=logger,\
+                               folder_path=PLUGIN_FOLDER_PATH)
+    
+    plugins = register_plugins(logger=logger,\
+                               plugins=raw_plugins)
+    
+    logger.info("Loading plugins:complete")
 
     client = get_api_client()
 
@@ -677,8 +807,6 @@ def main()->int:
         return 1 
     else:
         logger.info("Extracting datasets:success")
-
-    
     logger.info("Extracting linked service:")
 
     linked_services = get_linked_service(client=client)
@@ -736,7 +864,8 @@ def main()->int:
         lineage = get_pipeline_table_lineage(static_pipeline=static_pipelines[pipeline_name],\
                                               runtime_context=runtime_contexts[pipeline_name],\
                                               linked_services=linked_services,\
-                                              is_use_fqn=IS_USE_FQN)
+                                              is_use_fqn=IS_USE_FQN,\
+                                              plugins=plugins)
 
         pipeline_lineage.append(PipelineLineage(
                             pipeline_name=pipeline_name,\

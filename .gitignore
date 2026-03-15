@@ -4,3 +4,4 @@ Pipfile.lock
 .env
 idea.txt
 src/__pycache__/*
+plugins/*

@@ -183,6 +183,7 @@ class GenericActivity:
     output_dataset_parameters:Dict[str,Parameter]
     is_input_supported:bool
     is_output_supported:bool
+    raw_activity:Any
 
 @dataclass
 class StaticPipeline:
