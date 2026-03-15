@@ -46,7 +46,7 @@ from core import (
 )
 from util import has_field,create_parameter
 from formatter import LogFormatter
-from plugin import StoreProcedurePluginContext
+from plugin import StoreProcedurePluginContext,ScriptPluginContext
 from pluginhelper import PluginWrapper,resolve_plugins,get_database_connections,load_plugins,register_plugins
 
 logger = logging.getLogger("azure-lineage")
@@ -188,6 +188,20 @@ def get_generic_activity(raw_activity:Any,\
             is_output_supported=False,\
             raw_activity=raw_activity
         )
+    
+    if activity_type==ActivityType.Script:
+
+        return GenericActivity(
+            name=raw_activity.name,
+            activity_type=ActivityType.Script,
+            input_dataset=None,
+            output_dataset=None,
+            input_dataset_parameters=list(),
+            output_dataset_parameters=list(),
+            is_input_supported=True,\
+            is_output_supported=False,\
+            raw_activity=raw_activity
+        ) 
 
 
     # something went wrong when there is no inputs and output
@@ -509,17 +523,25 @@ def get_pipeline_table_lineage(static_pipeline:StaticPipeline,\
         
         generic_activity = static_pipeline.activities[edge.node_name]
 
-        if generic_activity.activity_type==ActivityType.Procedure:
+        if generic_activity.activity_type in [ActivityType.Procedure,ActivityType.Script]:
 
-            procedure_context = get_procedure_context(procedure_activity=generic_activity.raw_activity,\
-                                            runtime_context=runtime_context)
+            plugin_context = None
 
-            if procedure_context is None:
+            if generic_activity.activity_type==ActivityType.Procedure:
+                plugin_context = get_procedure_context(procedure_activity=generic_activity.raw_activity,\
+                                                runtime_context=runtime_context)
+                            
+                
+            elif generic_activity.activity_type==ActivityType.Script:
+                plugin_context = get_script_context(script_activity=generic_activity.raw_activity,\
+                                                    runtime_context=runtime_context)
+  
+            if plugin_context is None:
                 continue
             
             if len(plugins)>0:
                 
-                linked_service_name = procedure_context.linked_service_name
+                linked_service_name = plugin_context.linked_service_name
 
                 linked_service = None
 
@@ -534,7 +556,7 @@ def get_pipeline_table_lineage(static_pipeline:StaticPipeline,\
 
 
                 for plugin_lineage in resolve_plugins(plugins=plugins,\
-                                context=procedure_context,\
+                                context=plugin_context,\
                                 connection=database_conection):
                     
                     source_tables = plugin_lineage[0]
@@ -545,6 +567,7 @@ def get_pipeline_table_lineage(static_pipeline:StaticPipeline,\
                                           sources=source_tables,\
                                           target=target_table)
 
+        
         else:
 
             # will only support lineage if we support both input and output
@@ -738,7 +761,7 @@ def get_procedure_context(procedure_activity:Any,
     
     try:
 
-        procedure_name = procedure_activity.stored_procedure_name
+        procedure_name = create_parameter(parameter_value=procedure_activity.stored_procedure_name).value
 
         procedure_parameters:Dict[str,str] = dict()
 
@@ -783,7 +806,43 @@ def get_procedure_context(procedure_activity:Any,
         })
 
         return None
+
+def get_script_context(script_activity:Any,
+                        runtime_context:PipelineRuntimeContext)->Optional[ScriptPluginContext]:
     
+    try:
+        
+        linked_service_name = None
+
+        if has_field(script_activity,"linked_service_name") and\
+            script_activity.linked_service_name is not None:
+    
+            linked_service_name = script_activity.linked_service_name.reference_name
+
+        script = None
+
+        if has_field(script_activity,"scripts") and\
+            script_activity.scripts is not None:
+            
+            script = create_parameter(parameter_value=script_activity.scripts[0].text).value
+        
+
+        return ScriptPluginContext(
+            activity_name=script_activity.name,\
+            linked_service_name=linked_service_name,\
+            script=script,\
+            pipeline_parameters=runtime_context.pipeline_parameters
+        )
+
+    except Exception:
+        
+        logger.warning(f"get script context failed",extra={
+            "event":"get_script_context_failed",
+            "activity": script_activity.name
+        })
+
+    return None
+
 def main()->int:
 
     logger.info("Loading plugins:")

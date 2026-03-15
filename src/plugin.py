@@ -20,7 +20,7 @@ class StoreProcedurePluginContext:
 class ScriptPluginContext:
     activity_name:str
     linked_service_name:str
-    sql_script:str
+    script:str
     pipeline_parameters: Dict[str, str]
 
 PluginContext = StoreProcedurePluginContext | ScriptPluginContext

@@ -137,7 +137,8 @@ class ActivityType(Enum):
     If = 4 
     ForEach = 5
     While = 6
-    Unsupported = 7
+    Script = 7
+    Unsupported = 8
 
 
 @dataclass

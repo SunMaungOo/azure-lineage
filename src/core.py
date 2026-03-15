@@ -26,7 +26,8 @@ ACTIVITY_TYPE_MAP:Dict[str,ActivityType] = {
     "IfCondition":ActivityType.If,
     "Until":ActivityType.While,
     "SqlPoolStoredProcedure":ActivityType.Procedure,
-    "SqlServerStoredProcedure":ActivityType.Procedure
+    "SqlServerStoredProcedure":ActivityType.Procedure,
+    "Script":ActivityType.Script
 }
 
 BLOB_PARTITION_PATTERN = re.compile(
@@ -250,7 +251,8 @@ def get_simplify_graph(activities:List[Activity],\
     
     required_activities_type:List[ActivityType] = [ActivityType.Copy,\
                                                    ActivityType.Procedure,\
-                                                   ActivityType.Execute]
+                                                   ActivityType.Execute,\
+                                                   ActivityType.Script]
     
     to_remove_node:Set[str] = set()
     
