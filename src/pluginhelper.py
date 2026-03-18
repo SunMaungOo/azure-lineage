@@ -1,61 +1,102 @@
-from plugin import LineagePlugin,PluginContext,LinkedServiceConnection,PluginLineage
+from plugin import LineagePlugin,PluginContext,LinkedServiceConnection,PluginLineage,LineageWriterPlugin,LineageContext
 from typing import Optional,List,Dict
 from logging import Logger
 from pathlib import Path
 from importlib.util import spec_from_file_location,module_from_spec
 from inspect import getmembers,isabstract,isclass
-from model import LinkedService,DatabaseLinkedService,BlobLinkedService
+from model import LinkedService,DatabaseLinkedService,BlobLinkedService,PLUGIN_TYPES
+from abc import ABC
 
-class PluginWrapper(LineagePlugin):
+class BasePluginWrapper(ABC):
 
     def __init__(self,\
                 logger:Logger,\
-                plugin:LineagePlugin):
+                plugin:PLUGIN_TYPES):
         
-        self.__logger = logger
-        self.__plugin = plugin
-        self.__is_healthy = False
-        self.__name = type(plugin).__name__
+        self.logger = logger
+        self.plugin = plugin
+        self.is_healthy = False
+        self.name = type(plugin).__name__
 
     def init(self)->bool:
         
         try:
 
-            self.__plugin.init()
-            self.__is_healthy = True
-            self.__logger.info(f"Plugin {self.__name} : registered successfully")
+            self.plugin.init()
+            self.is_healthy = True
+            self.logger.info(f"Plugin {self.name} : registered successfully")
             return True     
         except ImportError as e:
-            self.__logger.error(f"Plugin {self.__name} : missing dependency {e.name}")
+            self.logger.error(f"Plugin {self.name} : missing dependency {e.name}")
             return False
         except Exception as e:
-            self.__logger.info(f"Plugin {self.__name} : init failed - {e}")
+            self.logger.info(f"Plugin {self.name} : init failed - {e}")
             return False
 
+
+class LineagePluginWrapper(BasePluginWrapper):
+
+    def __init__(self,\
+                logger:Logger,\
+                plugin:LineagePlugin):
+        
+        super().__init__(logger=logger,\
+                         plugin=plugin)
 
     def is_can_handle(self,\
                    context:PluginContext)->bool:
         
-        if not self.__is_healthy:
+        if not self.is_healthy:
             return False
         
         try:
-            return self.__plugin.is_can_handle(context=context)
+            return self.plugin.is_can_handle(context=context)
         except Exception as e:
-            self.__logger.error(f"Plugin {self.__name} : is_can_handle failed - {e}")
+            self.logger.error(f"Plugin {self.name} : is_can_handle failed - {e}")
         
         return False
 
     def execute(self,\
                 context:PluginContext,\
                 connection:Optional[LinkedServiceConnection])->Optional[PluginLineage]:
+        
         try:
-            return self.__plugin.execute(context=context,\
-                                         connection=connection)
+            return self.plugin.execute(context=context,\
+                                            connection=connection)
         except Exception as e:
-            self.__logger.error(f"Plugin {self.__name} : execute failed - {e}")
+            self.logger.error(f"Plugin {self.name} : execute failed - {e}")
 
         return None
+    
+class LineageWriterPluginWrapper(BasePluginWrapper):
+
+    def __init__(self,\
+                logger:Logger,\
+                plugin:LineageWriterPlugin):
+        
+        super().__init__(logger=logger,\
+                         plugin=plugin)
+
+    def is_can_handle(self,\
+                   context:List[LineageContext])->bool:
+        
+        if not self.is_healthy:
+            return False
+        
+        try:
+            return self.plugin.is_can_handle(context=context)
+        except Exception as e:
+            self.logger.error(f"Plugin {self.name} : is_can_handle failed - {e}")
+        
+        return False
+
+    def write(self,\
+              context:List[LineageContext])->bool:
+        
+        try:
+            return self.plugin.write(context=context)
+        except Exception as e:
+            self.logger.error(f"Plugin {self.name} : write failed - {e}")
 
 def get_database_connections(linked_service:LinkedService)->LinkedServiceConnection:
     
@@ -74,7 +115,13 @@ def get_database_connections(linked_service:LinkedService)->LinkedServiceConnect
         properties=properties
     )
 
-def resolve_plugins(plugins:List[PluginWrapper],\
+def get_activity_plugins(plugins:List[BasePluginWrapper])->List[LineagePluginWrapper]:
+    return [x for x in plugins if isinstance(x,LineagePluginWrapper)]
+
+def get_writer_plugins(plugins:List[BasePluginWrapper])->List[LineageWriterPluginWrapper]:
+    return [x for x in plugins if isinstance(x,LineageWriterPluginWrapper)]
+
+def resolve_activity_plugins(plugins:List[LineagePluginWrapper],\
                     context:PluginContext,\
                     connection:Optional[LinkedServiceConnection])->Optional[PluginLineage]:
     
@@ -88,23 +135,48 @@ def resolve_plugins(plugins:List[PluginWrapper],\
         
     return None
 
+def resolve_writer_plugins(plugins:List[LineageWriterPluginWrapper],\
+                           context:List[LineageContext])->bool:
+
+    is_writer_failed = False
+
+    for plugin in plugins:
+
+        if not plugin.is_can_handle(context=context):
+            continue
+
+        if not plugin.write(context=context):
+            is_writer_failed = True
+
+    return not is_writer_failed
+
 
 def register_plugins(logger:Logger,\
-                     plugins:List[LineagePlugin])->List[PluginWrapper]:
+                     plugins:List[PLUGIN_TYPES])->List[BasePluginWrapper]:
     """
     init the plugins
     """
 
-    wrappers = [PluginWrapper(logger=logger,\
-                              plugin=plugin) 
-                for plugin in plugins]
+    activity_plugins = [LineagePluginWrapper(logger=logger,\
+                                             plugin=plugin) 
+                        for plugin in plugins 
+                        if isinstance(plugin,LineagePlugin)]
+
+    writer_plugins = [LineageWriterPluginWrapper(logger=logger,\
+                                             plugin=plugin) 
+                        for plugin in plugins 
+                        if isinstance(plugin,LineageWriterPlugin)]
+
+    wrappers = list()
+    wrappers.extend(activity_plugins)
+    wrappers.extend(writer_plugins)
     
     return [plugin for plugin in wrappers if plugin.init()]
         
 def load_plugins(logger:Logger,\
-                 folder_path:str)->List[LineagePlugin]:
+                 folder_path:str)->List[PLUGIN_TYPES]:
     
-    plugins:List[LineagePlugin] = list()
+    plugins:List[PLUGIN_TYPES] = list()
 
     plugin_dir = Path(folder_path)  
 
@@ -137,12 +209,17 @@ def load_plugins(logger:Logger,\
 
         for _,obj in getmembers(module,isclass):
             
-             # find all the obj which used the LineagePlugin
+             # find all the plugin
 
-            if not(issubclass(obj,LineagePlugin) and\
+            is_lineage_plugin = issubclass(obj,LineagePlugin) and\
                 obj is not LineagePlugin and\
-                not isabstract(obj)):
-                
+                not isabstract(obj)
+             
+            is_lineage_writer_plugin = issubclass(obj,LineageWriterPlugin) and\
+                obj is not LineageWriterPlugin and\
+                not isabstract(obj)
+
+            if not(is_lineage_plugin or is_lineage_writer_plugin):
                 continue
             
             logger.info(f"Plugin file '{py_file.name}': found '{obj.__name__}'") 

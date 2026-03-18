@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Dict,Optional,List,Tuple,Set
 from abc import ABC,abstractmethod
+from datetime import datetime
 
 @dataclass
 class LinkedServiceConnection:
@@ -22,6 +23,21 @@ class ScriptPluginContext:
     linked_service_name:str
     script:str
     pipeline_parameters: Dict[str, str]
+
+@dataclass
+class LineageEdge:
+    node_name:str
+    parent_nodes:List[str]
+
+@dataclass
+class LineageContext:
+    pipeline_name:str
+    pipline_run_id:str
+    pipeline_run_status:str
+    pipeline_run_start:datetime
+    pipeline_run_end:datetime
+    lineage:List[LineageEdge]
+
 
 PluginContext = StoreProcedurePluginContext | ScriptPluginContext
 
@@ -53,3 +69,28 @@ class LineagePlugin(ABC):
         Return the None if we cannot generate the lineage.
         """
         pass
+
+class LineageWriterPlugin(ABC):
+    @abstractmethod
+    def init(self)->bool:
+        """
+        init the plugion
+        """
+        pass
+
+    @abstractmethod
+    def is_can_handle(self,\
+                      context:LineageContext)->bool:
+        """
+        check whether the plugin can handle this kind of context
+        """
+        pass
+
+    @abstractmethod
+    def write(self,\
+                context:LineageContext)->bool:
+        """
+        Write the lineage.
+        """
+        pass
+

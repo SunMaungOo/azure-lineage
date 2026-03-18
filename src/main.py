@@ -46,8 +46,18 @@ from core import (
 )
 from util import has_field,create_parameter
 from formatter import LogFormatter
-from plugin import StoreProcedurePluginContext,ScriptPluginContext
-from pluginhelper import PluginWrapper,resolve_plugins,get_database_connections,load_plugins,register_plugins
+from plugin import StoreProcedurePluginContext,ScriptPluginContext,LineageContext,LineageEdge
+from pluginhelper import (
+    BasePluginWrapper,
+    resolve_activity_plugins,
+    get_database_connections,
+    load_plugins,register_plugins,
+    get_activity_plugins,
+    get_writer_plugins,
+    resolve_writer_plugins,
+    LineagePluginWrapper,
+    LineageWriterPluginWrapper
+)
 
 logger = logging.getLogger("azure-lineage")
 
@@ -514,7 +524,7 @@ def get_pipeline_table_lineage(static_pipeline:StaticPipeline,\
                                 runtime_context:PipelineRuntimeContext,\
                                 linked_services:List[LinkedService],\
                                 is_use_fqn:bool,\
-                                plugins:List[PluginWrapper])->List[Edge]:
+                                plugins:List[LineagePluginWrapper])->List[Edge]:
     
     lineage:List[Edge] = list()
 
@@ -555,7 +565,7 @@ def get_pipeline_table_lineage(static_pipeline:StaticPipeline,\
                     database_conection = get_database_connections(linked_service=linked_service)
 
 
-                for plugin_lineage in resolve_plugins(plugins=plugins,\
+                for plugin_lineage in resolve_activity_plugins(plugins=plugins,\
                                 context=plugin_context,\
                                 connection=database_conection):
                     
@@ -726,7 +736,8 @@ def get_runtime_context(client:AzureClient,\
         run_start=pipeline_run.run_start,\
         run_end=pipeline_run.run_end,
         pipeline_parameters=pipeline_parameters,\
-        activity_source_inputs=activity_source_inputs
+        activity_source_inputs=activity_source_inputs,
+        pipeline_run_status=pipeline_run.run_status
     )
 
 def get_static_pipeline(pipeline:APIPipelineResource,\
@@ -843,6 +854,11 @@ def get_script_context(script_activity:Any,
 
     return None
 
+def to_lineage_edge(edges:List[Edge])->List[LineageEdge]:
+    return [LineageEdge(node_name=edge.node_name,\
+                        parent_nodes=edge.parent_nodes) for edge in edges]
+
+
 def main()->int:
 
     logger.info("Loading plugins:")
@@ -853,6 +869,10 @@ def main()->int:
     plugins = register_plugins(logger=logger,\
                                plugins=raw_plugins)
     
+    activity_plugins = get_activity_plugins(plugins=plugins)
+
+    writer_plugins = get_writer_plugins(plugins=plugins)
+
     logger.info("Loading plugins:complete")
 
     client = get_api_client()
@@ -915,8 +935,10 @@ def main()->int:
                                               pipeline_run=latest_pipeline_info)
         
         runtime_contexts[runtime_context.pipeline_name] = runtime_context
-
+    
     pipeline_lineage:List[PipelineLineage] = list()
+
+    lineage_contexts:List[LineageContext] = list()
 
     for pipeline_name in runtime_contexts:
                 
@@ -924,13 +946,22 @@ def main()->int:
                                               runtime_context=runtime_contexts[pipeline_name],\
                                               linked_services=linked_services,\
                                               is_use_fqn=IS_USE_FQN,\
-                                              plugins=plugins)
+                                              plugins=activity_plugins)
 
         pipeline_lineage.append(PipelineLineage(
                             pipeline_name=pipeline_name,\
                             lineage=lineage)
                             )
-    
+        
+        writer_lineage_edge:List[LineageEdge] = to_lineage_edge(edges=lineage)
+        
+        lineage_contexts.append(LineageContext(pipeline_name=pipeline_name,\
+                                               pipline_run_id=runtime_contexts[pipeline_name].run_id,\
+                                               pipeline_run_status=runtime_contexts[pipeline_name].pipeline_run_status,\
+                                               pipeline_run_start=runtime_contexts[pipeline_name].run_start,\
+                                               pipeline_run_end=runtime_contexts[pipeline_name].run_end,\
+                                               lineage=writer_lineage_edge))
+
     logger.info("Extracting lineage:success")
 
     logger.info(f"Lineage found:{len(pipeline_lineage)}")
@@ -971,6 +1002,12 @@ def main()->int:
         logger.info(f"Saving lineage to {LINEAGE_OUTPUT_FILE_PATH}:fail")
 
         return 1
+    
+    if len(writer_plugins)>0:
+
+        if not resolve_writer_plugins(plugins=writer_plugins,\
+                               context=lineage_contexts):
+            logger.warning("Some plugins fail to write lineage")
     
     return 0
 

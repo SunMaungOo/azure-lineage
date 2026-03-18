@@ -3,6 +3,7 @@ from enum import Enum
 from typing import List,Optional,Union,Any,Dict
 from graph import Edge
 from datetime import datetime
+from plugin import LineagePlugin,LineageWriterPlugin
 
 class DatasetType(Enum):
     Oracle = 1
@@ -119,6 +120,7 @@ class APIPipelineRun:
     run_id:str
     run_start:datetime
     run_end:datetime
+    run_status:str
     is_latest:bool
     parameters:Any
 
@@ -169,6 +171,7 @@ class PipelineRuntimeContext:
     run_id:str
     run_start:datetime
     run_end:datetime
+    pipeline_run_status:str
     pipeline_parameters:Dict[str,str]
     # key : activity_name
     # value : source dict from the activity run input
@@ -196,3 +199,5 @@ class StaticPipeline:
 AZURE_PARAMETER_TYPES = str | int | float | bool
 
 AZURE_PARAMETER_TYPES_TUPLE = (str,int,float,bool)
+
+PLUGIN_TYPES = LineagePlugin | LineageWriterPlugin

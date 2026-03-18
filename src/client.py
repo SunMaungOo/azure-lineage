@@ -214,7 +214,8 @@ class DataFactoryClient:
                 run_start=x.run_start,\
                 run_end=x.run_end,\
                 is_latest=x.is_latest,
-                parameters=x.parameters
+                parameters=x.parameters,
+                run_status=x.status
             ) for x in pipeline_runs.value]
         
         except Exception:
@@ -407,7 +408,8 @@ class SynapseClient:
                 run_start=x.run_start,\
                 run_end=x.run_end,\
                 is_latest=x.is_latest,
-                parameters=x.parameters
+                parameters=x.parameters,
+                run_status=x.status
             ) for x in pipeline_runs.value]
         
         except Exception:
