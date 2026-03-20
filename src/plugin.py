@@ -32,7 +32,7 @@ class LineageEdge:
 @dataclass
 class LineageContext:
     pipeline_name:str
-    pipline_run_id:str
+    pipeline_run_id:str
     pipeline_run_status:str
     pipeline_run_start:datetime
     pipeline_run_end:datetime
@@ -80,7 +80,7 @@ class LineageWriterPlugin(ABC):
 
     @abstractmethod
     def is_can_handle(self,\
-                      context:LineageContext)->bool:
+                      context:List[LineageContext])->bool:
         """
         check whether the plugin can handle this kind of context
         """
@@ -88,7 +88,7 @@ class LineageWriterPlugin(ABC):
 
     @abstractmethod
     def write(self,\
-                context:LineageContext)->bool:
+                context:List[LineageContext])->bool:
         """
         Write the lineage.
         """

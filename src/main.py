@@ -956,7 +956,7 @@ def main()->int:
         writer_lineage_edge:List[LineageEdge] = to_lineage_edge(edges=lineage)
         
         lineage_contexts.append(LineageContext(pipeline_name=pipeline_name,\
-                                               pipline_run_id=runtime_contexts[pipeline_name].run_id,\
+                                               pipeline_run_id=runtime_contexts[pipeline_name].run_id,\
                                                pipeline_run_status=runtime_contexts[pipeline_name].pipeline_run_status,\
                                                pipeline_run_start=runtime_contexts[pipeline_name].run_start,\
                                                pipeline_run_end=runtime_contexts[pipeline_name].run_end,\
