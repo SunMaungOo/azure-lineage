@@ -26,7 +26,8 @@ def get_dataset_type(azure_dataset_type:str)->DatasetType:
         "AzureSqlDWTable":DatasetType.Synapse,
         "SqlServerTable":DatasetType.OnPrimeMSSQL,
         "OracleSource":DatasetType.Oracle,
-        "Parquet":DatasetType.Blob
+        "Parquet":DatasetType.Blob,
+        "SqlPoolReference":DatasetType.Synapse
     }
 
     if azure_dataset_type in mapping:
@@ -64,6 +65,23 @@ def get_sql_script(input_source_obj:Dict[str,Any],dataset_type:DatasetType)->Opt
     
     return None
 
+def is_synapse_sql_pool(dataset_resource:DatasetResource,\
+                dataset_type:DatasetType)->bool:
+    
+    if dataset_type!=DatasetType.Synapse:
+        return False
+    
+    if not has_field(dataset_resource.properties,"additional_properties"):
+        return False
+    
+    if not has_field(dataset_resource.properties.additional_properties,"sqlPool"):
+        return False
+    
+    if not has_field(dataset_resource.properties.additional_properties,"typeProperties"):
+        return False
+
+    return True
+
 def get_dataset_info(dataset_resource:DatasetResource,\
                      dataset_name:str,\
                      dataset_type:DatasetType)->Optional[ProcessDataset]:
@@ -79,11 +97,22 @@ def get_dataset_info(dataset_resource:DatasetResource,\
 
         table = None
 
-        if dataset_resource.properties.schema_type_properties_schema is not None:
-            schema = create_parameter(parameter_value=dataset_resource.properties.schema_type_properties_schema)
+        if is_synapse_sql_pool(dataset_resource=dataset_resource,\
+                               dataset_type=dataset_type):
+                
+            if "schema" in dataset_resource.properties.additional_properties["typeProperties"]:      
+                schema = create_parameter(parameter_value=dataset_resource.properties.additional_properties["typeProperties"]["schema"])
 
-        if dataset_resource.properties.table is not None:
-            table = create_parameter(parameter_value=dataset_resource.properties.table)
+            if "table" in dataset_resource.properties.additional_properties["typeProperties"]:
+                table = create_parameter(parameter_value=dataset_resource.properties.additional_properties["typeProperties"]["table"])
+
+        else:
+
+            if dataset_resource.properties.schema_type_properties_schema is not None:
+                schema = create_parameter(parameter_value=dataset_resource.properties.schema_type_properties_schema)
+
+            if dataset_resource.properties.table is not None:
+                table = create_parameter(parameter_value=dataset_resource.properties.table)
 
         if schema is None and table is None:
             info = QueryDataset(name=dataset_name,\

@@ -97,13 +97,11 @@ def get_datasets(client:AzureClient)->Optional[List[Dataset]]:
 
             info = get_dataset_info(dataset_resource=dataset_resource,\
                                     dataset_name=dataset_name,\
-                                    dataset_type=dataset_type)
-            
+                                    dataset_type=dataset_type)                  
             datasets.append(Dataset(name=dataset_name,\
                                     type=dataset_type,\
                                     linked_service_name=linked_service_name,\
                                     info = info))
-
         return datasets
     
     except Exception:
@@ -416,7 +414,7 @@ def resolve_source_table(activity:GenericActivity,\
         linked_service = find_linked_service(linked_services=linked_services,\
                                              search_linked_service_name=input_dataset.linked_service_name)
         
-        if linked_services is not None:
+        if linked_service is not None:
 
             source_host_prefix = get_linked_service_host_prefix(linked_service=linked_service)
 
@@ -490,7 +488,7 @@ def resolve_target_table(activity:GenericActivity,\
         linked_service = find_linked_service(linked_services=linked_services,\
                                              search_linked_service_name=output_dataset.linked_service_name)
         
-        if linked_services is not None:
+        if linked_service is not None:
 
             target_host_prefix = get_linked_service_host_prefix(linked_service=linked_service)
 
@@ -503,7 +501,7 @@ def resolve_target_table(activity:GenericActivity,\
 def add_lineage(initial_lineage:List[Edge],\
                 sources:Set[str],\
                 target:str)->List[Edge]:
-
+    
     new_edge = Edge(
         node_name=target,
         parent_nodes=list(sources)
@@ -530,10 +528,13 @@ def get_pipeline_table_lineage(static_pipeline:StaticPipeline,\
 
 
     for edge in static_pipeline.virtual_graph:
-        
+
         generic_activity = static_pipeline.activities[edge.node_name]
 
-        if generic_activity.activity_type in [ActivityType.Procedure,ActivityType.Script]:
+        if generic_activity.activity_type==ActivityType.Execute:
+            continue
+
+        elif generic_activity.activity_type in [ActivityType.Procedure,ActivityType.Script]:
 
             plugin_context = None
 
@@ -578,11 +579,18 @@ def get_pipeline_table_lineage(static_pipeline:StaticPipeline,\
                                           target=target_table)
 
         
-        else:
+        elif generic_activity.activity_type==ActivityType.Copy:
 
             # will only support lineage if we support both input and output
 
             if not (generic_activity.is_input_supported and generic_activity.is_output_supported):
+
+                logger.warning("unsupported activity.skipping",extra={
+                    "event":"unsupported_activity",
+                    "pipeline":runtime_context.pipeline_name,
+                    "activity":generic_activity.name
+                })
+                
                 continue
 
             # by common sense , we should only support single table dataset and location dataset as sink

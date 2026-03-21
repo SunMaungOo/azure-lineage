@@ -9,6 +9,7 @@ from datetime import datetime
 from azure.synapse.artifacts import ArtifactsClient
 from azure.core.exceptions import DeserializationError
 from munch import Munch
+from util import has_field
 import requests
 
 class AzureClient:
@@ -285,12 +286,21 @@ class SynapseClient:
                 if dataset_resource.properties.linked_service_name is not None:
                     linked_service_name = dataset_resource.properties.linked_service_name.reference_name
 
+                azure_data_type = dataset_resource.properties.type
+
+                if azure_data_type is None and \
+                    hasattr(dataset_resource.properties,"additional_properties"):
+
+                    if not has_field(dataset_resource.properties.additional_properties,"sqlPool"):
+                        continue
+
+                    azure_data_type = dataset_resource.properties.additional_properties["sqlPool"]["type"]
 
                 dataset.append(
                     APIDatasetResource(
                         dataset_name=dataset_resource.name,\
                         linked_service_name=linked_service_name,\
-                        azure_data_type=dataset_resource.properties.type,\
+                        azure_data_type=azure_data_type,\
                         properties=dataset_resource.properties
                     )
                 )
