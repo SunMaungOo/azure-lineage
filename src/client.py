@@ -251,7 +251,11 @@ class DataFactoryClient:
                     APIActivityRun(
                         activity_name=activity.activity_name,
                         activity_type=activity.activity_type,
-                        input=input
+                        input=input,
+                        run_id=activity.pipeline_run_id,
+                        run_start=activity.activity_run_start,
+                        run_end=activity.activity_run_end,
+                        run_status=activity.status
                     )
                 )
 
@@ -454,10 +458,13 @@ class SynapseClient:
                     APIActivityRun(
                         activity_name=activity.activity_name,
                         activity_type=activity.activity_type,
-                        input=input
+                        input=input,
+                        run_id=activity.pipeline_run_id,
+                        run_start=activity.activity_run_start,
+                        run_end=activity.activity_run_end,
+                        run_status=activity.status
                     )
-                )
-
+                ) 
             return activities_run
 
         except Exception:

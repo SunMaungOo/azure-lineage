@@ -130,6 +130,10 @@ class APIActivityRun:
     activity_name:str
     activity_type:str
     input:Any
+    run_id:str
+    run_start:datetime
+    run_end:datetime
+    run_status:str
 
 
 class ActivityType(Enum):
