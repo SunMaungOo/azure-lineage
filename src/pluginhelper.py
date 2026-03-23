@@ -78,7 +78,7 @@ class LineageWriterPluginWrapper(BasePluginWrapper):
                          plugin=plugin)
 
     def is_can_handle(self,\
-                   context:List[LineageContext])->bool:
+                   context:LineageContext)->bool:
         
         if not self.is_healthy:
             return False
@@ -91,7 +91,7 @@ class LineageWriterPluginWrapper(BasePluginWrapper):
         return False
 
     def write(self,\
-              context:List[LineageContext])->bool:
+              context:LineageContext)->bool:
         
         try:
             return self.plugin.write(context=context)
@@ -136,7 +136,7 @@ def resolve_activity_plugins(plugins:List[LineagePluginWrapper],\
     return None
 
 def resolve_writer_plugins(plugins:List[LineageWriterPluginWrapper],\
-                           context:List[LineageContext])->bool:
+                           context:LineageContext)->bool:
 
     is_writer_failed = False
 

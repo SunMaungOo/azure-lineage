@@ -1,5 +1,5 @@
 from model import Activity, ActivityType,Resolved,Unresolved,Parameter,ParameterType
-from graph import get_node_names,get_parent_nodes
+from graph import get_node_names,get_parent_nodes,Edge,merge_edge
 from core import (
     branch_to_edges,
     get_flatten_branches,
@@ -13,6 +13,7 @@ from core import (
 )
 from typing import List,Dict
 from lineage import clean_sql,get_sql_lineage
+from copy import deepcopy
 
 # virtual-dom test
 
@@ -652,6 +653,31 @@ def test_resolve_blob():
 
     
     assert dataset_parameters == {"file_name":"data.ext"}
+
+def test_graph_check_mutation_issue():
+
+    left_edges:List[Edge] = list()
+    left_edges.append(Edge(
+        node_name="A",
+        parent_nodes=["P1"]
+    ))
+
+    right_edges:List[Edge] = list()
+    right_edges.append(Edge(
+        node_name="A",
+        parent_nodes=["P2"]
+    ))
+
+    # deep copy to get original state
+
+    original_left = deepcopy(left_edges)
+
+    foo = merge_edge(left_edges=left_edges,\
+                     right_edges=right_edges)
+    
+    # the left edge must be the same as previous state we got before merging 
+
+    assert left_edges == original_left
 
 
 def run_all_test():

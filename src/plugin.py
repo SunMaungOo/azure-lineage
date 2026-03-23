@@ -30,7 +30,10 @@ class LineageEdge:
     parent_nodes:List[str]
 
 @dataclass
-class LineageContext:
+class PipelineLineageContext:
+    """
+    Lineage for pipeline
+    """
     pipeline_name:str
     pipeline_run_id:str
     pipeline_run_status:str
@@ -38,8 +41,23 @@ class LineageContext:
     pipeline_run_end:datetime
     lineage:List[LineageEdge]
 
+@dataclass
+class ActivityLineageContext:
+    """
+    Lineage for individual activity of the pipeline
+    """
+    pipeline_name:str
+    pipeline_run_id:str
+    pipeline_run_status:str
+    pipeline_run_start:datetime
+    pipeline_run_end:datetime
+    activity_name:str
+    activity_type:str
+    lineage:List[LineageEdge]
 
 PluginContext = StoreProcedurePluginContext | ScriptPluginContext
+
+LineageContext = List[PipelineLineageContext] | List[ActivityLineageContext]
 
 PluginLineage = List[Tuple[Set[str],str]]
 
@@ -80,7 +98,7 @@ class LineageWriterPlugin(ABC):
 
     @abstractmethod
     def is_can_handle(self,\
-                      context:List[LineageContext])->bool:
+                      context:LineageContext)->bool:
         """
         check whether the plugin can handle this kind of context
         """
@@ -88,7 +106,7 @@ class LineageWriterPlugin(ABC):
 
     @abstractmethod
     def write(self,\
-                context:List[LineageContext])->bool:
+                context:LineageContext)->bool:
         """
         Write the lineage.
         """

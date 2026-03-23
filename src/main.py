@@ -1,6 +1,6 @@
 from typing import Dict,List,Set,Optional,Any,Tuple
 from lineage import get_sql_lineage,clean_sql
-from graph import Edge,merge_edge
+from graph import Edge,merge_edge,merge_edges
 from model import (
     DatasetType,
     Dataset,
@@ -46,7 +46,14 @@ from core import (
 )
 from util import has_field,create_parameter
 from formatter import LogFormatter
-from plugin import StoreProcedurePluginContext,ScriptPluginContext,LineageContext,LineageEdge
+from plugin import (
+    StoreProcedurePluginContext,
+    ScriptPluginContext,
+    LineageContext,
+    LineageEdge,
+    PipelineLineageContext,
+    ActivityLineageContext
+)
 from pluginhelper import (
     BasePluginWrapper,
     resolve_activity_plugins,
@@ -522,14 +529,17 @@ def get_pipeline_table_lineage(static_pipeline:StaticPipeline,\
                                 runtime_context:PipelineRuntimeContext,\
                                 linked_services:List[LinkedService],\
                                 is_use_fqn:bool,\
-                                plugins:List[LineagePluginWrapper])->List[Edge]:
-    
-    lineage:List[Edge] = list()
-
+                                plugins:List[LineagePluginWrapper])->List[ActivityLineageContext]:
+    """
+    Return lineage of each activity in the pipeline
+    """
+    result:List[ActivityLineageContext] = list()
 
     for edge in static_pipeline.virtual_graph:
 
         generic_activity = static_pipeline.activities[edge.node_name]
+
+        lineage:List[Edge] = list()
 
         if generic_activity.activity_type==ActivityType.Execute:
             continue
@@ -577,6 +587,17 @@ def get_pipeline_table_lineage(static_pipeline:StaticPipeline,\
                     lineage = add_lineage(initial_lineage=lineage,\
                                           sources=source_tables,\
                                           target=target_table)
+                                    
+                result.append(ActivityLineageContext(
+                    pipeline_name=runtime_context.pipeline_name,\
+                    pipeline_run_id=runtime_context.run_id,\
+                    pipeline_run_status=runtime_context.pipeline_run_status,\
+                    pipeline_run_start=runtime_context.run_start,\
+                    pipeline_run_end=runtime_context.run_end,\
+                    activity_name=generic_activity.name,\
+                    activity_type=generic_activity.activity_type,\
+                    lineage=lineage
+                ))
 
         
         elif generic_activity.activity_type==ActivityType.Copy:
@@ -617,7 +638,18 @@ def get_pipeline_table_lineage(static_pipeline:StaticPipeline,\
                                   sources=source_tables,\
                                   target=target_table)
             
-    return lineage
+            result.append(ActivityLineageContext(
+                pipeline_name=runtime_context.pipeline_name,\
+                pipeline_run_id=runtime_context.run_id,\
+                pipeline_run_status=runtime_context.pipeline_run_status,\
+                pipeline_run_start=runtime_context.run_start,\
+                pipeline_run_end=runtime_context.run_end,\
+                activity_name=generic_activity.name,\
+                activity_type=generic_activity.activity_type,\
+                lineage=lineage
+            ))
+            
+    return result
 
 def to_open_lineage(namespace:str,producer:str,pipeline_lineage:PipelineLineage)->Tuple[Dict[str,Any],Dict[str,Any]]:
     
@@ -736,7 +768,6 @@ def get_runtime_context(client:AzureClient,\
 
             if source:
                 activity_source_inputs[activity_run.activity_name] = source
-                
 
     return PipelineRuntimeContext(
         pipeline_name=pipeline_run.pipeline_name,\
@@ -940,35 +971,48 @@ def main()->int:
             continue
 
         runtime_context = get_runtime_context(client=client,\
-                                              pipeline_run=latest_pipeline_info)
-        
+                                              pipeline_run=latest_pipeline_info)           
         runtime_contexts[runtime_context.pipeline_name] = runtime_context
     
     pipeline_lineage:List[PipelineLineage] = list()
 
-    lineage_contexts:List[LineageContext] = list()
+    pipeline_lineage_contexts:List[PipelineLineageContext] = list()
+
+    activity_lineage_contexts:List[ActivityLineageContext] = list()
 
     for pipeline_name in runtime_contexts:
-                
-        lineage = get_pipeline_table_lineage(static_pipeline=static_pipelines[pipeline_name],\
+        
+        activity_lineage = get_pipeline_table_lineage(static_pipeline=static_pipelines[pipeline_name],\
                                               runtime_context=runtime_contexts[pipeline_name],\
                                               linked_services=linked_services,\
                                               is_use_fqn=IS_USE_FQN,\
                                               plugins=activity_plugins)
-
+        
+        edges:List[List[Edge]] = [x.lineage for x in activity_lineage]
+        
         pipeline_lineage.append(PipelineLineage(
                             pipeline_name=pipeline_name,\
-                            lineage=lineage)
+                            lineage=merge_edges(edges))
                             )
         
-        writer_lineage_edge:List[LineageEdge] = to_lineage_edge(edges=lineage)
-        
-        lineage_contexts.append(LineageContext(pipeline_name=pipeline_name,\
-                                               pipeline_run_id=runtime_contexts[pipeline_name].run_id,\
-                                               pipeline_run_status=runtime_contexts[pipeline_name].pipeline_run_status,\
-                                               pipeline_run_start=runtime_contexts[pipeline_name].run_start,\
-                                               pipeline_run_end=runtime_contexts[pipeline_name].run_end,\
-                                               lineage=writer_lineage_edge))
+        pipeline_lineage_context = to_pipeline_lineage_context(activity_lineage_context=activity_lineage)
+
+        if pipeline_lineage_context is None:
+
+            current_pipeline_context = runtime_contexts[pipeline_name]
+
+            pipeline_lineage_context = PipelineLineageContext(
+                pipeline_name=pipeline_name,\
+                pipeline_run_id=current_pipeline_context.run_id,\
+                pipeline_run_status=current_pipeline_context.pipeline_run_status,\
+                pipeline_run_start=current_pipeline_context.run_start,\
+                pipeline_run_end=current_pipeline_context.run_end,\
+                lineage=list()
+            )
+                
+        pipeline_lineage_contexts.append(pipeline_lineage_context)
+
+        activity_lineage_contexts.extend(activity_lineage)
 
     logger.info("Extracting lineage:success")
 
@@ -1008,16 +1052,58 @@ def main()->int:
     
     except:
         logger.info(f"Saving lineage to {LINEAGE_OUTPUT_FILE_PATH}:fail")
-
         return 1
     
     if len(writer_plugins)>0:
 
         if not resolve_writer_plugins(plugins=writer_plugins,\
-                               context=lineage_contexts):
+                               context=pipeline_lineage_contexts):
             logger.warning("Some plugins fail to write lineage")
-    
+
+        if not resolve_writer_plugins(plugins=writer_plugins,\
+                               context=activity_lineage_contexts):
+            logger.warning("Some plugins fail to write lineage") 
+
     return 0
+
+def to_pipeline_lineage_context(activity_lineage_context:List[ActivityLineageContext])->Optional[PipelineLineageContext]:
+    """
+    activities : activity context of same pipeline
+    """
+
+    if len(activity_lineage_context)==0:
+        return None
+    
+    pipeline_names:Set[str] = {
+        x.pipeline_name
+        for x in activity_lineage_context
+    }
+
+    # the activity context in the parameter are of different pipeline
+
+    if len(pipeline_names)>1:
+        return None
+    
+    pipeline_lineage:List[Edge] = list()
+
+    first_activity = activity_lineage_context[0]
+
+    for activity_context in activity_lineage_context:
+
+        for lineage in activity_context.lineage:
+
+            pipeline_lineage = add_lineage(initial_lineage=pipeline_lineage,\
+                                           sources=set(lineage.parent_nodes),\
+                                           target=lineage.node_name)
+            
+    return PipelineLineageContext(
+        pipeline_name=first_activity.pipeline_name,\
+        pipeline_run_id=first_activity.pipeline_run_id,\
+        pipeline_run_status=first_activity.pipeline_run_status,\
+        pipeline_run_start=first_activity.pipeline_run_start,\
+        pipeline_run_end=first_activity.pipeline_run_end,\
+        lineage=to_lineage_edge(edges=pipeline_lineage)
+    )
 
 if __name__=="__main__":
     sys.exit(main())

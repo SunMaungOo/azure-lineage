@@ -135,56 +135,37 @@ def edge_to_dict(edges:List[Edge])->Dict[str,List[str]]:
 
 def merge_edge(left_edges:List[Edge],right_edges:List[Edge])->List[Edge]:
     
-    merge_edge:List[Edge] = list()
+    graph:Dict[str,Set[str]] = dict()
 
-    for left_node in left_edges:
+    # load left side
 
-        parents = left_node.parent_nodes
+    for node in left_edges:
+        graph[node.node_name] = set(node.parent_nodes)
+    
+    for node in right_edges:
+        # if the node does not exist in left edge
+        if node.node_name not in graph:
+            graph[node.node_name] = set(node.parent_nodes)
+        else:
+            # if the same node in both edge , add additional right edge node parent
+            graph[node.node_name].update(node.parent_nodes)
 
-        for right_node in right_edges:
-            """
-            if there are same node in both edge
-            concat the parent
-            """            
-            if left_node.node_name==right_node.node_name:
-                for parent in right_node.parent_nodes:
-                    if parent not in parents:
-                        parents.append(parent)
-        
-        merge_edge.append(
-            Edge
-            (
-                node_name=left_node.node_name,\
-                parent_nodes=parents
-            )
+    return [
+        Edge(
+            node_name=name,
+            parent_nodes=list(parents)
         )
-
-    left_node_names = [node.node_name for node in left_edges]
-
-    # node which only exists in right edges
-
-    unqiue_right_nodes = [node for node in right_edges if not node.node_name in left_node_names]
-
-    for node in unqiue_right_nodes:
-
-        merge_edge.append(
-            Edge
-            (
-                node_name=node.node_name,\
-                parent_nodes=node.parent_nodes
-            )
-        )
-
-    return merge_edge
+        for name,parents in graph.items()
+    ]
 
 def merge_edges(graphs:List[List[Edge]])->List[Edge]:
 
-    if len(graphs)==1:
-        return graphs[0]
+    if len(graphs)==0:
+        return list()
     
     left_edge = graphs[0]
 
-    merge_graph = None
+    merge_graph = left_edge
 
     for index in range(1,len(graphs)):
 
