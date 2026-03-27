@@ -23,6 +23,9 @@ The following sources and sinks are currently supported:
 ## Supported Activities
 
 - **CopyActivity**
+- **ScriptActivity** (with plugin)
+- **SqlPoolStoredProcedureActivity** (with plugin)
+- **SqlServerStoredProcedureActivity** (with plugin)
 
 
 
@@ -45,6 +48,7 @@ The following environment variables are required or optional when running the ex
 | `OPENLINEAGE_PRODUCER`                 | Custom producer name for OpenLineage.                                       | `azure-lineage` |
 | `IS_USE_FQN`                           | Whether to use fully qualified database names for lineage.                  | `true`  |
 | `LINEAGE_OUTPUT_FILE_PATH`             | Custom output path for lineage.                                       | `lineage.json` |
+| `PLUGIN_FOLDER_PATH`                   | Folder path to search and load plugins from                           | `/plugins`     |
 
 
 
