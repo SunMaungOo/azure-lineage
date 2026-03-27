@@ -133,13 +133,16 @@ def get_dataset_info(dataset_resource:DatasetResource,\
 
         file_nane = None
 
-        if has_field(location,"container"):
+        if has_field(location,"container") and\
+            location.container is not None:
             container = create_parameter(parameter_value=location.container)
 
-        if has_field(location,"folder_path"):
+        if has_field(location,"folder_path") and\
+            location.folder_path is not None:
             folder_path = create_parameter(parameter_value=location.folder_path)
 
-        if has_field(location,"file_name"):
+        if has_field(location,"file_name") and\
+            location.file_name is not None:
             file_nane = create_parameter(parameter_value=location.file_name)
 
         info = LocationDataset(
