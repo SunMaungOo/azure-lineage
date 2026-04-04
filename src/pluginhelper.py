@@ -6,6 +6,8 @@ from importlib.util import spec_from_file_location,module_from_spec
 from inspect import getmembers,isabstract,isclass
 from model import LinkedService,DatabaseLinkedService,BlobLinkedService,PLUGIN_TYPES
 from abc import ABC
+import sys
+from types import ModuleType
 
 class BasePluginWrapper(ABC):
 
@@ -183,6 +185,24 @@ def load_plugins(logger:Logger,\
     if not plugin_dir.exists():
         logger.warning(f"Plugin folder '{folder_path}' does not exist — skip loading the plugin")
         return list()
+    
+    # module in the plugin folder
+
+    plugin_model_name:List[str] = [
+        py_file.stem
+        for py_file in plugin_dir.glob("*.py")
+        if not py_file.name.startswith("_")\
+        and py_file.name!="plugin.py"
+    ]
+
+    # backup the module which have the same name as name as plugin module
+
+    backup_conflict_module:Dict[str,ModuleType] = {
+        name:sys.modules[name]
+        for name in plugin_model_name
+        if name in sys.modules
+    }
+
 
     for py_file in plugin_dir.glob("*.py"):
         #skip __init__.py like file
@@ -192,7 +212,14 @@ def load_plugins(logger:Logger,\
 
         module_name = f"plugins.{py_file.stem}"
 
+        
         try:
+
+            # delete module which have the same module name as plugin folder
+            for name in backup_conflict_module:
+                del sys.modules[name]
+
+            sys.path.insert(0,str(plugin_dir))
 
             spec = spec_from_file_location(name=module_name,\
                                                location=py_file)
@@ -204,13 +231,24 @@ def load_plugins(logger:Logger,\
         except Exception as e:
             logger.error(f"Plugin file '{py_file.name}': failed to import — {e}")
             continue
+        finally:
+
+            # restore the original path import
+
+            if str(plugin_dir) in sys.path:
+                sys.path.remove(str(plugin_dir))
+            
+            # restore the original module
+
+            for name,mod in backup_conflict_module.items():
+                sys.modules[name] = mod
         
         # get all the class object
 
         for _,obj in getmembers(module,isclass):
             
              # find all the plugin
-
+            
             is_lineage_plugin = issubclass(obj,LineagePlugin) and\
                 obj is not LineagePlugin and\
                 not isabstract(obj)
@@ -225,6 +263,5 @@ def load_plugins(logger:Logger,\
             logger.info(f"Plugin file '{py_file.name}': found '{obj.__name__}'") 
 
             plugins.append(obj())  
- 
-
+     
     return plugins
