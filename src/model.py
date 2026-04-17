@@ -205,3 +205,11 @@ AZURE_PARAMETER_TYPES = str | int | float | bool
 AZURE_PARAMETER_TYPES_TUPLE = (str,int,float,bool)
 
 PLUGIN_TYPES = LineagePlugin | LineageWriterPlugin
+
+
+@dataclass(frozen=True)
+class LineageActivityInfo:
+    pipeline_name:str
+    activity_name:str
+    activity_type:ActivityType
+    is_skipped:True

@@ -55,9 +55,23 @@ class ActivityLineageContext:
     activity_type:str
     lineage:List[LineageEdge]
 
+@dataclass
+class ActivityLineageInfo:
+    """
+    Activity which have lineage is extracted
+    """
+    pipeline_name:str
+    # whether the pipeline contain the activity that lineage can be extracted from
+    is_pipeline_supported:bool
+    activity_name:Optional[str]
+    activity_type:Optional[str]
+    # whether the lineage is extract from activity
+    is_lineage_extracted:bool
+
+
 PluginContext = StoreProcedurePluginContext | ScriptPluginContext
 
-LineageContext = List[PipelineLineageContext] | List[ActivityLineageContext]
+LineageContext = List[PipelineLineageContext] | List[ActivityLineageContext] | List[ActivityLineageInfo]
 
 PluginLineage = List[Tuple[Set[str],str]]
 

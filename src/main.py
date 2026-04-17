@@ -10,7 +10,6 @@ from model import (
     LocationDataset,
     ParameterType,
     Parameter,
-    ProcessDataset,
     PipelineLineage,
     APIPipelineResource,
     APIPipelineRun,
@@ -21,12 +20,13 @@ from model import (
     PipelineRuntimeContext,
     GenericActivity,
     StaticPipeline,
-    ActivityType
+    ActivityType,
+    LineageActivityInfo
 )
 from connector import get_sql_script,get_dataset_type,get_dataset_info,get_linked_service_info,get_linked_service_type
 from client import AzureClient
 from config import get_api_client,DAYS_SEARCH,OPENLINEAGE_NAMESPACE,PLUGIN_FOLDER_PATH
-from config import OPENLINEAGE_OUTPUT_FILE_PATH,OPENLINEAGE_PRODUCER,IS_USE_FQN,LINEAGE_OUTPUT_FILE_PATH
+from config import OPENLINEAGE_OUTPUT_FILE_PATH,OPENLINEAGE_PRODUCER,IS_USE_FQN,LINEAGE_OUTPUT_FILE_PATH,IS_DEBUG
 import uuid
 from datetime import datetime,timezone
 import json
@@ -49,21 +49,19 @@ from formatter import LogFormatter
 from plugin import (
     StoreProcedurePluginContext,
     ScriptPluginContext,
-    LineageContext,
     LineageEdge,
     PipelineLineageContext,
-    ActivityLineageContext
+    ActivityLineageContext,
+    ActivityLineageInfo
 )
 from pluginhelper import (
-    BasePluginWrapper,
     resolve_activity_plugins,
     get_database_connections,
     load_plugins,register_plugins,
     get_activity_plugins,
     get_writer_plugins,
     resolve_writer_plugins,
-    LineagePluginWrapper,
-    LineageWriterPluginWrapper
+    LineagePluginWrapper
 )
 
 logger = logging.getLogger("azure-lineage")
@@ -75,7 +73,6 @@ formatter = LogFormatter(
     fmt='%(asctime)s | %(levelname)-8s | %(name)-15s | %(lineno)-3d | %(message)s',
     datefmt='%Y-%m-%dT%H:%M:%S'  # ISO 8601 with microseconds → Z for UTC
 )
-
 
 console_handler = logging.StreamHandler()
 console_handler.setLevel(logging.INFO)
@@ -529,17 +526,23 @@ def get_pipeline_table_lineage(static_pipeline:StaticPipeline,\
                                 runtime_context:PipelineRuntimeContext,\
                                 linked_services:List[LinkedService],\
                                 is_use_fqn:bool,\
-                                plugins:List[LineagePluginWrapper])->List[ActivityLineageContext]:
+                                plugins:List[LineagePluginWrapper])->Tuple[List[ActivityLineageContext],Set[LineageActivityInfo]]:
     """
-    Return lineage of each activity in the pipeline
+    Return lineage of each activity in the pipeline , and activity it have skip
     """
     result:List[ActivityLineageContext] = list()
+
+    # state of whether we can get lineage from activity
+
+    lineage_activities:Set[LineageActivityInfo] = set()
 
     for edge in static_pipeline.virtual_graph:
 
         generic_activity = static_pipeline.activities[edge.node_name]
 
         lineage:List[Edge] = list()
+
+        is_skippped = False
 
         if generic_activity.activity_type==ActivityType.Execute:
             continue
@@ -558,6 +561,11 @@ def get_pipeline_table_lineage(static_pipeline:StaticPipeline,\
                                                     runtime_context=runtime_context)
   
             if plugin_context is None:
+                
+                # if we do not have handler for activity, it is a skip activities
+
+                is_skippped = True
+
                 continue
             
             if len(plugins)>0:
@@ -575,10 +583,17 @@ def get_pipeline_table_lineage(static_pipeline:StaticPipeline,\
                 if linked_service is not None:  
                     database_conection = get_database_connections(linked_service=linked_service)
 
-
-                for plugin_lineage in resolve_activity_plugins(plugins=plugins,\
+                plugin_lineages = resolve_activity_plugins(plugins=plugins,\
                                 context=plugin_context,\
-                                connection=database_conection):
+                                connection=database_conection)
+                
+                if len(plugin_lineages)==0:
+                    
+                    # if the handler cannot provide lineage , it is a skip activity
+
+                    is_skippped = True
+
+                for plugin_lineage in plugin_lineages:
                     
                     source_tables = plugin_lineage[0]
 
@@ -598,6 +613,14 @@ def get_pipeline_table_lineage(static_pipeline:StaticPipeline,\
                     activity_type=generic_activity.activity_type,\
                     lineage=lineage
                 ))
+
+                lineage_activities.add(LineageActivityInfo(
+                    pipeline_name=static_pipeline.pipeline_name,\
+                    activity_name=generic_activity.name,\
+                    activity_type=generic_activity.activity_type,\
+                    is_skipped=is_skippped
+                    )
+                )
 
         
         elif generic_activity.activity_type==ActivityType.Copy:
@@ -632,6 +655,9 @@ def get_pipeline_table_lineage(static_pipeline:StaticPipeline,\
             # we cannot add lineage when we cannot parse the sink 
 
             if target_table is None:
+                
+                is_skippped = True
+                               
                 continue
             
             lineage = add_lineage(initial_lineage=lineage,\
@@ -648,8 +674,16 @@ def get_pipeline_table_lineage(static_pipeline:StaticPipeline,\
                 activity_type=generic_activity.activity_type,\
                 lineage=lineage
             ))
+
+            lineage_activities.add(LineageActivityInfo(
+                    pipeline_name=static_pipeline.pipeline_name,\
+                    activity_name=generic_activity.name,\
+                    activity_type=generic_activity.activity_type,\
+                    is_skipped=is_skippped
+                )
+            )
             
-    return result
+    return result,lineage_activities
 
 def to_open_lineage(namespace:str,producer:str,pipeline_lineage:PipelineLineage)->Tuple[Dict[str,Any],Dict[str,Any]]:
     
@@ -897,6 +931,40 @@ def to_lineage_edge(edges:List[Edge])->List[LineageEdge]:
     return [LineageEdge(node_name=edge.node_name,\
                         parent_nodes=edge.parent_nodes) for edge in edges]
 
+def get_activity_lineage_infos(raw_pipeline_names:Set[str],\
+                    static_pipeline_names:Set[str],\
+                    lineage_activity_infos:Set[LineageActivityInfo])->List[ActivityLineageInfo]:
+
+    activities_lineage_infos:List[ActivityLineageInfo] = list()
+
+    for raw_pipeline_name in raw_pipeline_names:
+        
+        if raw_pipeline_name not in static_pipeline_names:
+
+            activities_lineage_infos.append(ActivityLineageInfo(
+                pipeline_name=raw_pipeline_name,\
+                is_pipeline_supported=False,\
+                activity_name=None,\
+                activity_type=None,\
+                is_lineage_extracted=False
+            ))
+            
+            continue
+
+        activities = [x for x in lineage_activity_infos if x.pipeline_name==raw_pipeline_name]
+
+        for activity in activities:
+
+            activities_lineage_infos.append(ActivityLineageInfo(
+                pipeline_name=raw_pipeline_name,\
+                is_pipeline_supported=True,\
+                activity_name=activity.activity_name,\
+                activity_type=str(activity.activity_type),\
+                is_lineage_extracted=not(activity.is_skipped)
+            ))
+                  
+    return activities_lineage_infos
+
 
 def main()->int:
 
@@ -980,13 +1048,17 @@ def main()->int:
 
     activity_lineage_contexts:List[ActivityLineageContext] = list()
 
+    lineage_activity_infos:Set[LineageActivityInfo] = set()
+
     for pipeline_name in runtime_contexts:
         
-        activity_lineage = get_pipeline_table_lineage(static_pipeline=static_pipelines[pipeline_name],\
+        activity_lineage,lineage_activities = get_pipeline_table_lineage(static_pipeline=static_pipelines[pipeline_name],\
                                               runtime_context=runtime_contexts[pipeline_name],\
                                               linked_services=linked_services,\
                                               is_use_fqn=IS_USE_FQN,\
                                               plugins=activity_plugins)
+        
+        lineage_activity_infos = lineage_activity_infos.union(lineage_activities)
         
         edges:List[List[Edge]] = [x.lineage for x in activity_lineage]
         
@@ -1063,6 +1135,21 @@ def main()->int:
         if not resolve_writer_plugins(plugins=writer_plugins,\
                                context=activity_lineage_contexts):
             logger.warning("Some plugins fail to write lineage") 
+
+    if IS_DEBUG:
+
+        raw_pipeline_names = {x.name for x in raw_pipelines}
+
+        static_pipeline_names = {key for key in runtime_contexts}
+
+        activity_lineage_infos = get_activity_lineage_infos(raw_pipeline_names=raw_pipeline_names,\
+                        static_pipeline_names=static_pipeline_names,\
+                        lineage_activity_infos=lineage_activity_infos)
+        
+        if not resolve_writer_plugins(plugins=writer_plugins,\
+                                      context=activity_lineage_infos):
+                                      
+            logger.warning("Some plugins fail to write activity lineage info") 
 
     return 0
 
