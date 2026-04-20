@@ -5,3 +5,5 @@ idea.txt
 .env
 .github/*
 src/__pycache__/*
+plugins/*
+examples/*

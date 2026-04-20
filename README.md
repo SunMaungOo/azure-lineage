@@ -27,7 +27,20 @@ The following sources and sinks are currently supported:
 - **SqlPoolStoredProcedureActivity** (with plugin)
 - **SqlServerStoredProcedureActivity** (with plugin)
 
+## Developing Plugin
 
+It does not make sense for the tools to 
+
+1. Add support for writing to various file format and system
+2. Provide different way to parse sql lineage 
+
+For such use cases the tool provide the plugin system to allows integration with different system.
+
+In order to use the plugins
+
+1. Copy ``src/plugin.py`` to the folder where you will develop the plugin in
+2. Extend ``LineagePlugin`` (to provide lineage) and ``LineageWriterPlugin`` (to write lineage to other system). You can look at ``examples`` for example on how to create plugin
+3. Set ``PLUGIN_FOLDER_PATH`` environment variable to folder path your plugin are in
 
 ## Environment Variables
 
@@ -49,6 +62,7 @@ The following environment variables are required or optional when running the ex
 | `IS_USE_FQN`                           | Whether to use fully qualified database names for lineage.                  | `true`  |
 | `LINEAGE_OUTPUT_FILE_PATH`             | Custom output path for lineage.                                       | `lineage.json` |
 | `PLUGIN_FOLDER_PATH`                   | Folder path to search and load plugins from                           | `/plugins`     |
+| `IS_DEBUG`                             | Whether to write the complete lineage information to debugging plugin                                                             | `false`        |
 
 
 
