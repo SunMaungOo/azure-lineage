@@ -17,7 +17,7 @@ The following sources and sinks are currently supported:
 | Azure Synapse             |  Yes   | Yes  |
 | Microsoft SQL Database    |  Yes   | Yes  |
 | Blob Storage              |  Yes   | Yes  |
-
+| MongoDB                   |  Yes   |  No  |
 
 
 ## Supported Activities

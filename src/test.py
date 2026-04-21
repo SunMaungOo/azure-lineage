@@ -14,6 +14,7 @@ from core import (
 from typing import List,Dict
 from lineage import clean_sql,get_sql_lineage
 from copy import deepcopy
+from connector import get_mongodb_host
 
 # virtual-dom test
 
@@ -679,6 +680,21 @@ def test_graph_check_mutation_issue():
 
     assert left_edges == original_left
 
+def test_get_mongodb_host():
+
+    connection_string = "mongodb://my-user:my-password@mongodb-host1.com:3000,mongodb-host2.com:3000"
+
+    mongodb_host = get_mongodb_host(mongodb_connection_string=connection_string)
+
+    assert mongodb_host=="mongodb-host1.com"
+
+def test_get_mongodb_host_srv():
+
+    connection_string = "mongodb+srv://my-user:my-password@mongodb-host1.com:3000,mongodb-host2.com:3000"
+
+    mongodb_host = get_mongodb_host(mongodb_connection_string=connection_string)
+
+    assert mongodb_host=="mongodb-host1.com"
 
 def run_all_test():
 

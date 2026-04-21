@@ -12,6 +12,7 @@ class DatasetType(Enum):
     Blob = 4
     OnPrimeMSSQL = 5
     Unsupported = 6
+    MongoDB = 7
 
 class LinkedServiceType(Enum):
     Oracle = 1
@@ -20,6 +21,7 @@ class LinkedServiceType(Enum):
     Blob = 4
     OnPrimeMSSQL = 5
     Unsupported = 6
+    MongoDB = 7
 
 class ParameterType(Enum):
     Expression=1

@@ -403,21 +403,27 @@ def resolve_interpolated_expression(interpolated_expression:str,\
     return Unresolved(expression=interpolated_expression,\
                        reason="unrecognised expression")
 
-def resolve_table_expression(schema_expression:str,
+def resolve_table_expression(schema_expression:Optional[str],
                             table_expression:str,
                             dataset_parameters:Dict[str, str],
                             pipeline_parameters:Dict[str, str])->Optional[str]:
     """
-    Resolve schema expression and table expression to schema.table format
+    Resolve schema expression and table expression to schema.table format or table format 
+    if the schema is None because there can be optional schema like mongodb
     """
-    
-    schema = resolve_expression(expression=schema_expression,\
-                                dataset_parameters=dataset_parameters,\
-                                pipeline_parameters=pipeline_parameters)
+
+    if schema_expression is not None:
+        schema = resolve_expression(expression=schema_expression,\
+                                    dataset_parameters=dataset_parameters,\
+                                    pipeline_parameters=pipeline_parameters)
     
     table = resolve_expression(expression=table_expression,\
                                 dataset_parameters=dataset_parameters,\
                                 pipeline_parameters=pipeline_parameters)
+    
+    if schema_expression is None and\
+    not isinstance(table,Unresolved):
+        return table.value
 
     if isinstance(schema, Unresolved) or isinstance(table, Unresolved):
         return None

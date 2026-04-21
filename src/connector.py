@@ -18,6 +18,34 @@ from util import create_parameter,get_connection_properties,has_field
 from azure.mgmt.datafactory.models import DatasetResource
 import re
 
+def get_mongodb_host(mongodb_connection_string:str)->Optional[str]:
+    """
+    Return the first host of mongodb connecting string
+    """
+
+    # remove mongodb , mongodb+srv:// url part
+
+    stripped = re.sub(r"^mongodb(\+srv)?://", "", mongodb_connection_string)
+
+    # if it have user name and password
+
+    if "@" in stripped:
+
+        # remove user name and password
+
+        stripped = stripped.split("@",1)[1]
+
+    hosts = stripped.split(",")
+
+    if len(hosts)==0:
+        return None
+    
+    first_host = hosts[0]
+
+    # remove the port if it exist
+
+    return first_host.split(":")[0]
+
 def get_dataset_type(azure_dataset_type:str)->DatasetType:
 
     mapping:Dict[str,DatasetType] = {
@@ -27,7 +55,13 @@ def get_dataset_type(azure_dataset_type:str)->DatasetType:
         "SqlServerTable":DatasetType.OnPrimeMSSQL,
         "OracleSource":DatasetType.Oracle,
         "Parquet":DatasetType.Blob,
-        "SqlPoolReference":DatasetType.Synapse
+        "DelimitedText":DatasetType.Blob,
+        "Json":DatasetType.Blob,
+        "Parquet":DatasetType.Blob,
+        "Excel":DatasetType.Blob,
+        "SqlPoolReference":DatasetType.Synapse,
+        "MongoDbV2Collection":DatasetType.MongoDB,
+        "MongoDbAtlasCollection":DatasetType.MongoDB
     }
 
     if azure_dataset_type in mapping:
@@ -43,7 +77,9 @@ def get_linked_service_type(azure_linked_service_type:str)->LinkedServiceType:
         "AzureSqlDW":LinkedServiceType.Synapse,
         "SqlServer":LinkedServiceType.OnPrimeMSSQL,
         "AzureBlobStorage":LinkedServiceType.Blob,
-        "AzureBlobFS":LinkedServiceType.Blob
+        "AzureBlobFS":LinkedServiceType.Blob,
+        "MongoDbV2":LinkedServiceType.MongoDB,
+        "MongoDbAtlas":LinkedServiceType.MongoDB
     }
 
     if azure_linked_service_type in mapping:
@@ -153,6 +189,21 @@ def get_dataset_info(dataset_resource:DatasetResource,\
             file_name=file_nane
         )
 
+    elif dataset_type==DatasetType.MongoDB:
+
+        collection = None
+
+        if has_field(dataset_resource.properties,"collection") and\
+        dataset_resource.properties.collection is not None:
+            collection = create_parameter(dataset_resource.properties.collection)
+
+        info = SingleTableDataset(
+            name=dataset_name,
+            type=DatasetType.MongoDB,\
+            schema=None,\
+            table=collection
+        )
+
     return info
 
 def get_linked_service_info(linked_service_resource:APILinkedServiceResource)->Optional[ProcessLinkedService]:
@@ -215,6 +266,11 @@ def get_linked_service_info(linked_service_resource:APILinkedServiceResource)->O
                 url=Parameter(value=host,\
                               parameter_type=ParameterType.Static)
             )
+
+    elif linked_service_type==LinkedServiceType.MongoDB:
+
+        info = get_mongodb_processed_linked_service(mongodb_linked_service_resource=linked_service_resource,\
+                                                    linked_service_parameter_value=linked_service_parameter_value)
 
     return info
 
@@ -362,4 +418,53 @@ def get_oracle_processed_linked_service(oracle_linked_service_resource:APILinked
             host=host,\
             database=database
         )
+
+def get_mongodb_processed_linked_service(mongodb_linked_service_resource:APILinkedServiceResource,\
+                                       linked_service_parameter_value:str)->Optional[ProcessLinkedService]:
     
+    host = None
+
+    database = None
+
+    connection_properties = mongodb_linked_service_resource.properties
+
+    connection_string = None
+
+    host_str = None
+
+    if has_field(connection_properties,"connection_string") and\
+    connection_properties.connection_string is not None:
+        
+        connection_string = connection_properties.connection_string
+
+    #if it is a dict type , it mean the linked service connection string is in azure key-vault (we are going to ignore it)
+
+    if isinstance(connection_string,dict):
+        return None
+    
+    host_str = get_mongodb_host(connection_string)
+
+    if host_str is None:
+        return None
+
+    parameter_type = ParameterType.Static
+
+    if linked_service_parameter_value in host_str:
+        parameter_type = ParameterType.Expression
+
+    host = Parameter(
+        value=host,\
+        parameter_type=parameter_type
+    )
+        
+    if has_field(connection_properties,"database") and\
+        connection_properties.database is not None:
+        
+        database = create_parameter(
+            parameter_value= connection_properties.database
+        )
+        
+    return DatabaseLinkedService(
+        host=host,
+        database=database
+    )

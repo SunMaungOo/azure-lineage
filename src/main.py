@@ -101,7 +101,7 @@ def get_datasets(client:AzureClient)->Optional[List[Dataset]]:
 
             info = get_dataset_info(dataset_resource=dataset_resource,\
                                     dataset_name=dataset_name,\
-                                    dataset_type=dataset_type)                  
+                                    dataset_type=dataset_type)
             datasets.append(Dataset(name=dataset_name,\
                                     type=dataset_type,\
                                     linked_service_name=linked_service_name,\
@@ -232,7 +232,6 @@ def get_generic_activity(raw_activity:Any,\
     
     output_dataset = find_dataset(datasets=datasets,\
                                  search_dataset_name=output_dataset_name)
-    
     is_input_supported = not(input_dataset is None or input_dataset.type==DatasetType.Unsupported)
 
     is_output_supported = not(output_dataset is None or output_dataset.type==DatasetType.Unsupported)
@@ -277,6 +276,7 @@ def is_valid_lineage_linked_service(linked_service:LinkedService)->bool:
         return False
     
     elif isinstance(linked_service.info,DatabaseLinkedService):
+
         return linked_service.info.host.parameter_type!=ParameterType.Expression and\
         linked_service.info.database.parameter_type!=ParameterType.Expression
     
@@ -341,7 +341,13 @@ def resolve_source_table(activity:GenericActivity,\
 
     if isinstance(input_dataset_info,SingleTableDataset):
 
-        table_reference = resolve_table_expression(schema_expression=input_dataset_info.schema.value,\
+        schema_value = None
+        
+        if input_dataset_info.schema is not None:
+            schema_value = input_dataset_info.schema.value
+
+
+        table_reference = resolve_table_expression(schema_expression=schema_value,\
                                                    table_expression=input_dataset_info.table.value,\
                                                    dataset_parameters=dataset_parameters,
                                                    pipeline_parameters=runtime.pipeline_parameters)
