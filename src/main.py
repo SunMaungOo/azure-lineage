@@ -565,16 +565,14 @@ def get_pipeline_table_lineage(static_pipeline:StaticPipeline,\
             elif generic_activity.activity_type==ActivityType.Script:
                 plugin_context = get_script_context(script_activity=generic_activity.raw_activity,\
                                                     runtime_context=runtime_context)
-  
-            if plugin_context is None:
+
+            # if we cannot generate the context for the plugin , it is a skip activities
+            if plugin_context is None:                
                 
-                # if we do not have handler for activity, it is a skip activities
-
                 is_skippped = True
-
-                continue
             
-            if len(plugins)>0:
+            if plugin_context is not None and \
+                len(plugins)>0:
                 
                 linked_service_name = plugin_context.linked_service_name
 
@@ -592,41 +590,44 @@ def get_pipeline_table_lineage(static_pipeline:StaticPipeline,\
                 plugin_lineages = resolve_activity_plugins(plugins=plugins,\
                                 context=plugin_context,\
                                 connection=database_conection)
+        
+                # if there is an exception in plugin function or the handler cannot provide lineage , it is a skip activity
                 
-                if len(plugin_lineages)==0:
+                if plugin_lineages is None or \
+                    len(plugin_lineages)==0:
                     
-                    # if the handler cannot provide lineage , it is a skip activity
-
                     is_skippped = True
 
-                for plugin_lineage in plugin_lineages:
-                    
-                    source_tables = plugin_lineage[0]
+                if not is_skippped:
 
-                    target_table = plugin_lineage[1]
+                    for plugin_lineage in plugin_lineages:
 
-                    lineage = add_lineage(initial_lineage=lineage,\
+                        source_tables = plugin_lineage[0]
+
+                        target_table = plugin_lineage[1]
+
+                        lineage = add_lineage(initial_lineage=lineage,\
                                           sources=source_tables,\
                                           target=target_table)
-                                    
-                result.append(ActivityLineageContext(
-                    pipeline_name=runtime_context.pipeline_name,\
-                    pipeline_run_id=runtime_context.run_id,\
-                    pipeline_run_status=runtime_context.pipeline_run_status,\
-                    pipeline_run_start=runtime_context.run_start,\
-                    pipeline_run_end=runtime_context.run_end,\
-                    activity_name=generic_activity.name,\
-                    activity_type=generic_activity.activity_type,\
-                    lineage=lineage
-                ))
-
-                lineage_activities.add(LineageActivityInfo(
-                    pipeline_name=static_pipeline.pipeline_name,\
-                    activity_name=generic_activity.name,\
-                    activity_type=generic_activity.activity_type,\
-                    is_skipped=is_skippped
-                    )
+                        
+                    result.append(ActivityLineageContext(
+                        pipeline_name=runtime_context.pipeline_name,\
+                        pipeline_run_id=runtime_context.run_id,\
+                        pipeline_run_status=runtime_context.pipeline_run_status,\
+                        pipeline_run_start=runtime_context.run_start,\
+                        pipeline_run_end=runtime_context.run_end,\
+                        activity_name=generic_activity.name,\
+                        activity_type=generic_activity.activity_type,\
+                        lineage=lineage
+                    ))
+                        
+            lineage_activities.add(LineageActivityInfo(
+                pipeline_name=static_pipeline.pipeline_name,\
+                activity_name=generic_activity.name,\
+                activity_type=generic_activity.activity_type,\
+                is_skipped=is_skippped
                 )
+            )
 
         
         elif generic_activity.activity_type==ActivityType.Copy:
@@ -661,25 +662,26 @@ def get_pipeline_table_lineage(static_pipeline:StaticPipeline,\
             # we cannot add lineage when we cannot parse the sink 
 
             if target_table is None:
-                
+
                 is_skippped = True
-                               
-                continue
+                                        
             
-            lineage = add_lineage(initial_lineage=lineage,\
-                                  sources=source_tables,\
-                                  target=target_table)
-            
-            result.append(ActivityLineageContext(
-                pipeline_name=runtime_context.pipeline_name,\
-                pipeline_run_id=runtime_context.run_id,\
-                pipeline_run_status=runtime_context.pipeline_run_status,\
-                pipeline_run_start=runtime_context.run_start,\
-                pipeline_run_end=runtime_context.run_end,\
-                activity_name=generic_activity.name,\
-                activity_type=generic_activity.activity_type,\
-                lineage=lineage
-            ))
+            if not is_skippped:
+
+                lineage = add_lineage(initial_lineage=lineage,\
+                                      sources=source_tables,\
+                                        target=target_table)
+                            
+                result.append(ActivityLineageContext(
+                    pipeline_name=runtime_context.pipeline_name,\
+                    pipeline_run_id=runtime_context.run_id,\
+                    pipeline_run_status=runtime_context.pipeline_run_status,\
+                    pipeline_run_start=runtime_context.run_start,\
+                    pipeline_run_end=runtime_context.run_end,\
+                    activity_name=generic_activity.name,\
+                    activity_type=generic_activity.activity_type,\
+                    lineage=lineage
+                ))
 
             lineage_activities.add(LineageActivityInfo(
                     pipeline_name=static_pipeline.pipeline_name,\

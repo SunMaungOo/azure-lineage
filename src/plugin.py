@@ -1,13 +1,18 @@
 from dataclasses import dataclass
-from typing import Dict,Optional,List,Tuple,Set
+from typing import Dict,Optional,List,Tuple,Set,TypedDict
 from abc import ABC,abstractmethod
 from datetime import datetime
+
+class LinkedServiceProperties(TypedDict,total=False):
+    host:str
+    database:str
+    url:str
 
 @dataclass
 class LinkedServiceConnection:
     name:str
     type:str
-    properties:Dict[str, str] 
+    properties:LinkedServiceProperties 
 
 @dataclass
 class StoreProcedurePluginContext:

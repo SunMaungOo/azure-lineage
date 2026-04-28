@@ -1,4 +1,4 @@
-from plugin import LineagePlugin,PluginContext,LinkedServiceConnection,PluginLineage,LineageWriterPlugin,LineageContext
+from plugin import LineagePlugin,PluginContext,LinkedServiceConnection,PluginLineage,LineageWriterPlugin,LineageContext,LinkedServiceProperties
 from typing import Optional,List,Dict
 from logging import Logger
 from pathlib import Path
@@ -102,14 +102,20 @@ class LineageWriterPluginWrapper(BasePluginWrapper):
 
 def get_database_connections(linked_service:LinkedService)->LinkedServiceConnection:
     
-    properties:Dict[str,str] = dict()
+    properties:LinkedServiceProperties = {}
 
     if isinstance(linked_service.info,DatabaseLinkedService):
-        properties["host"] = linked_service.info.host
-        properties["database"] = linked_service.info.database.value
+
+        if linked_service.info.host is not None:
+            properties["host"] = linked_service.info.host.value
+        
+        if linked_service.info.database is not None:
+            properties["database"] = linked_service.info.database.value
     
     elif isinstance(linked_service.info,BlobLinkedService):
-        properties["url"] = linked_service.info.url
+
+        if linked_service.info.url is not None:
+            properties["url"] = linked_service.info.url.value
 
     return LinkedServiceConnection(
         name=linked_service.name,
