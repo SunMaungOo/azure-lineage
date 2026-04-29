@@ -452,7 +452,7 @@ def resolve_table_expression(schema_expression:Optional[str],
 
     return f"{schema.value}.{table.value}"
 
-def resolve_parameter(parameter:Optional[ParameterValue],\
+def resolve_parameter(parameter:Optional[Parameter],\
                       dataset_parameters:Dict[str, str],\
                       pipeline_parameters:Dict[str, str],\
                       linked_service_parameters:Dict[str,str])->Optional[str]:
@@ -470,9 +470,9 @@ def resolve_parameter(parameter:Optional[ParameterValue],\
     
     return None
 
-def resolve_blob_expression(container:Optional[ParameterValue],\
-                      folder_path:Optional[ParameterValue],\
-                      file_name:Optional[ParameterValue],\
+def resolve_blob_expression(container:Optional[Parameter],\
+                      folder_path:Optional[Parameter],\
+                      file_name:Optional[Parameter],\
                       dataset_parameters:Dict[str, str],\
                       pipeline_parameters:Dict[str, str])->Optional[str]:
     

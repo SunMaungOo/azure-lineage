@@ -857,6 +857,10 @@ def get_procedure_context(procedure_activity:Any,
 
         procedure_parameters:Dict[str,str] = dict()
 
+        linked_service_parameters:Dict[str,str] = dict()
+
+        store_procedure_raw_parameters:Dict[str,Any] = dict()
+
         if has_field(procedure_activity,"stored_procedure_parameters"):
             raw_parameters:Optional[Dict[str,Any]] = procedure_activity.stored_procedure_parameters
 
@@ -873,13 +877,30 @@ def get_procedure_context(procedure_activity:Any,
 
         if has_field(procedure_activity,"linked_service_name") and\
         procedure_activity.linked_service_name is not None:    
+            
             linked_service_name = procedure_activity.linked_service_name.reference_name
+
+            if has_field(procedure_activity.linked_service_name,"parameters"):
+                store_procedure_raw_parameters = procedure_activity.linked_service_name.parameters
         
         # for sql pool
 
         elif has_field(procedure_activity,"sql_pool") and\
             procedure_activity.sql_pool is not None:
             linked_service_name = procedure_activity.sql_pool.reference_name
+
+        if store_procedure_raw_parameters is not None:
+            for parameter_name in store_procedure_raw_parameters:
+
+                parameter = create_parameter(parameter_value=store_procedure_raw_parameters[parameter_name])
+
+                # only support static parameter type at the moment
+
+                if parameter.parameter_type!=ParameterType.Static:
+                    continue
+
+                linked_service_parameters[parameter_name] = parameter.value
+        
         
 
         return StoreProcedurePluginContext(
@@ -887,7 +908,8 @@ def get_procedure_context(procedure_activity:Any,
             linked_service_name=linked_service_name,\
             procedure_name=procedure_name,\
             procedure_parameters=procedure_parameters,\
-            pipeline_parameters=runtime_context.pipeline_parameters
+            pipeline_parameters=runtime_context.pipeline_parameters,\
+            linked_service_parameters=linked_service_parameters
         )
         
     except Exception:

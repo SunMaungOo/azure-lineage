@@ -21,6 +21,7 @@ class StoreProcedurePluginContext:
     procedure_name:str
     procedure_parameters:Dict[str, str]
     pipeline_parameters:Dict[str, str]
+    linked_service_parameters:Dict[str, str]
 
 @dataclass
 class ScriptPluginContext:
