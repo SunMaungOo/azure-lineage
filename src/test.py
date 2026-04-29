@@ -445,17 +445,18 @@ def test_virtual_graph_foreach_with_unsupported_body():
 
 
 def test_constant_value_resolves():
-    assert resolve_expression("hello", {}, {}) == Resolved("hello")
+    assert resolve_expression("hello", {}, {},{}) == Resolved("hello")
 
 def test_dataset_whole_field_resolved():
 
     assert resolve_expression("@dataset().schemaName",
                    dataset_parameters={"schemaName": "dbo"},
-                   pipeline_parameters={}) == Resolved("dbo")
+                   pipeline_parameters={},
+                   linked_service_parameters={}) == Resolved("dbo")
     
 def test_dataset_whole_field_missing_param():
 
-    result = resolve_expression("@dataset().schemaName", {}, {})
+    result = resolve_expression("@dataset().schemaName", {}, {},{})
 
     assert isinstance(result, Unresolved)
     assert "schemaName" in result.reason
@@ -464,7 +465,8 @@ def test_dataset_whole_field_not_matched_by_pipeline():
 
     result = resolve_expression("@dataset().tableName",
                      dataset_parameters={"tableName": "foo"},
-                     pipeline_parameters={"tableName": "bar"})
+                     pipeline_parameters={"tableName": "bar"},
+                     linked_service_parameters={})
     
     assert result == Resolved("foo")
 
@@ -474,19 +476,21 @@ def test_pipeline_whole_field_resolved():
 
     assert resolve_expression("@pipeline().parameters.env",
                    dataset_parameters={},
-                   pipeline_parameters={"env": "prod"}) == Resolved("prod")
+                   pipeline_parameters={"env": "prod"},
+                   linked_service_parameters={}) == Resolved("prod")
     
 
 def test_pipeline_whole_field_missing_param():
 
-    result = resolve_expression("@pipeline().parameters.env", {}, {})
+    result = resolve_expression("@pipeline().parameters.env", {}, {},{})
     assert isinstance(result, Unresolved)
 
 def test_pipeline_whole_field_not_matched_by_dataset():
 
     result = resolve_expression("@pipeline().parameters.schema",
                      dataset_parameters={"schema": "wrong"},
-                     pipeline_parameters={"schema": "correct"})
+                     pipeline_parameters={"schema": "correct"},
+                     linked_service_parameters={})
     
     assert result == Resolved("correct")
 
@@ -497,12 +501,13 @@ def test_dataset_interpolated_resolved():
 
     assert resolve_expression("@{dataset().schemaName}",
                    dataset_parameters={"schemaName": "foo"},
-                   pipeline_parameters={}) == Resolved("foo")
+                   pipeline_parameters={},
+                   linked_service_parameters={}) == Resolved("foo")
     
 
 def test_dataset_interpolated_missing_param():
 
-    result = resolve_expression("@{dataset().schemaName}", {}, {})
+    result = resolve_expression("@{dataset().schemaName}", {}, {},{})
 
     assert isinstance(result, Unresolved)
     assert "schemaName" in result.reason
@@ -511,7 +516,8 @@ def test_dataset_interpolated_with_prefix_suffix():
 
     result = resolve_expression("prefix_@{dataset().tableName}_suffix",
                      dataset_parameters={"tableName": "middle"},
-                     pipeline_parameters={})
+                     pipeline_parameters={},
+                     linked_service_parameters={})
     
     assert result == Resolved("prefix_middle_suffix")
 
@@ -520,7 +526,8 @@ def test_pipeline_interpolated_resolved():
 
     assert resolve_expression("@{pipeline().parameters.env}",
                    dataset_parameters={},
-                   pipeline_parameters={"env": "prod"}) == Resolved("prod")
+                   pipeline_parameters={"env": "prod"},
+                   linked_service_parameters={}) == Resolved("prod")
     
 
 def test_pipeline_interpolated_with_surrounding_text():
@@ -528,14 +535,15 @@ def test_pipeline_interpolated_with_surrounding_text():
     result = resolve_expression(
         "First Name: @{pipeline().parameters.firstName} Last Name: @{pipeline().parameters.lastName}",
         dataset_parameters={},
-        pipeline_parameters={"firstName": "Mr", "lastName": "Smith"}
+        pipeline_parameters={"firstName": "Mr", "lastName": "Smith"},
+        linked_service_parameters={}
     )
 
     assert result == Resolved("First Name: Mr Last Name: Smith")
 
 def test_pipeline_interpolated_missing_param():
 
-    result = resolve_expression("@{pipeline().parameters.env}", {}, {})
+    result = resolve_expression("@{pipeline().parameters.env}", {}, {},{})
     assert isinstance(result, Unresolved)
     assert "env" in result.reason
 
@@ -543,7 +551,8 @@ def test_two_dataset_tokens_in_one_string():
     result = resolve_expression(
         "@{dataset().schema}.@{dataset().table}",
         dataset_parameters={"schema": "dbo", "table": "foo"},
-        pipeline_parameters={}
+        pipeline_parameters={},
+        linked_service_parameters={}
     )
     assert result == Resolved("dbo.foo")
 
@@ -552,7 +561,8 @@ def test_first_token_unresolved():
     result = resolve_expression(
         "@{dataset().schema}.@{dataset().table}",
         dataset_parameters={"table": "orders"}, 
-        pipeline_parameters={}
+        pipeline_parameters={},
+        linked_service_parameters={}
     )
 
     assert isinstance(result, Unresolved)
@@ -561,45 +571,16 @@ def test_first_token_unresolved():
 
 def test_linked_service_whole_field_unresolved():
 
-    result = resolve_expression("@linkedService().connectionString", {}, {})
+    result = resolve_expression("@linkedService().connectionString", {}, {},{"connectionString":"testing"})
 
-    assert isinstance(result, Unresolved)
+    assert result==Resolved("testing")
 
 
 def test_linked_service_interpolated_unresolved():
 
-    result = resolve_expression("@{linkedService().connectionString}", {}, {})
+    result = resolve_expression("Hello @{linkedService().connectionString}", {}, {},{"connectionString":"testing"})
 
-    assert isinstance(result, Unresolved)
-
-def test_linked_service_named_argument_unresolved():
-
-    result = resolve_expression("@{linkedService('MyAzureSql').connectionString}", {}, {})
-
-    assert isinstance(result, Unresolved)
-
-def test_multiple_linked_service_tokens_unresolved():
-
-    result = resolve_expression(
-        "@{linkedService().param}@{linkedService().connectionString}",
-        {}, {}
-    )
-
-    assert isinstance(result, Unresolved)
-
-def test_linked_service_mixed_with_static_unresolved():
-
-    result = resolve_expression("Server=@{linkedService('Sql').host};Database=mydb", {}, {})
-
-    assert isinstance(result, Unresolved)
-
-def test_linked_service_params_present_still_unresolved():
-
-    result = resolve_expression("@{linkedService().host}",
-                     dataset_parameters={"host": "myserver"},
-                     pipeline_parameters={"host": "myserver"})
-    
-    assert isinstance(result, Unresolved)
+    assert result==Resolved("Hello testing")
 
 
 def test_table_expression_both_static():

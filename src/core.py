@@ -7,7 +7,7 @@ WHOLE_DATASET_PATTERN = re.compile(r"^@dataset\(\)\.(\w+)$")
 
 WHOLE_PIPELINE_PATTERN = re.compile(r"^@pipeline\(\)\.parameters\.(\w+)$")
 
-WHOLE_LINKED_SERVICE_PATTERN = re.compile(r"^@linkedService\(")
+WHOLE_LINKED_SERVICE_PATTERN = re.compile(r"^@linkedService\(\)\.(\w+)$")
 
 # find @{...} interolated pattern
 
@@ -17,7 +17,7 @@ INTERPOLATED_DATASET_PATTERN = re.compile(r"^dataset\(\)\.(\w+)$")
 
 INTERPOLATED_PIPELINE_PATTERN = re.compile(r"^pipeline\(\)\.parameters\.(\w+)$")
 
-INTERPOLATED_LINKED_SERVICE_PATTERN = re.compile(r"linkedService\(")
+INTERPOLATED_LINKED_SERVICE_PATTERN =  re.compile(r"^linkedService\(\)\.(\w+)$")
 
 ACTIVITY_TYPE_MAP:Dict[str,ActivityType] = {
     "Copy":ActivityType.Copy,
@@ -285,7 +285,8 @@ def get_virtual_graph(activities:List[Activity])->List[Edge]:
 
 def resolve_expression(expression:str,\
                        dataset_parameters:Dict[str, str],\
-                       pipeline_parameters:Dict[str, str])->ParameterValue:
+                       pipeline_parameters:Dict[str, str],\
+                       linked_service_parameters:Dict[str,str])->ParameterValue:
     """
     Resolve the expression on dataset_parameters and pipeline_parameters. 
     It could not resolve the adf functions and return Unresolved
@@ -294,6 +295,7 @@ def resolve_expression(expression:str,\
      static value :  foo 
      dataset parameter : @dataset().foo ,
      pipeline paramter : @pipeline().parameters.foo 
+     linked_service_parameters : @linkedService().foo
      interpolated expression : @{dataset().foo} , @{pipeline().parameters.foo}
     dataset_parameters (parameter_name,value) : value to replace it with
     pipeline_parameters (parameter_name,value) : value to replace it with
@@ -303,6 +305,15 @@ def resolve_expression(expression:str,\
 
         return Unresolved(expression="None",\
                           reason="null value")
+
+    match = WHOLE_LINKED_SERVICE_PATTERN.match(expression)
+    
+    if match:
+
+        name = match.group(1)
+
+        if name in linked_service_parameters:
+            return Resolved(linked_service_parameters[name])
 
     if WHOLE_LINKED_SERVICE_PATTERN.search(expression):
 
@@ -345,7 +356,8 @@ def resolve_expression(expression:str,\
 
             resolved = resolve_interpolated_expression(interpolated_expression=interpolated_expression,\
                                                        dataset_parameters=dataset_parameters,\
-                                                       pipeline_parameters=pipeline_parameters)
+                                                       pipeline_parameters=pipeline_parameters,\
+                                                       linked_service_parameters=linked_service_parameters)
             if isinstance(resolved, Unresolved):
 
                 return Unresolved(expression=expression,\
@@ -366,14 +378,22 @@ def resolve_expression(expression:str,\
 
 def resolve_interpolated_expression(interpolated_expression:str,\
                                     dataset_parameters:Dict[str, str],\
-                                    pipeline_parameters:Dict[str, str])->ParameterValue:
+                                    pipeline_parameters:Dict[str, str],\
+                                    linked_service_parameters:Dict[str,str])->ParameterValue:
     
     """Resolve the expression with @{...}."""
 
-    if INTERPOLATED_LINKED_SERVICE_PATTERN.search(interpolated_expression):
+    match = INTERPOLATED_LINKED_SERVICE_PATTERN.search(interpolated_expression)
 
+    if match:
+
+        name = match.group(1)
+
+        if name in linked_service_parameters:
+            return Resolved(linked_service_parameters[name])
+        
         return Unresolved(expression=interpolated_expression,\
-                          reason="linkedService() cannot be resolved statically")
+                                reason=f"linked service parameter '{name}' not in context")
 
     match = INTERPOLATED_DATASET_PATTERN.match(interpolated_expression)
 
@@ -415,11 +435,13 @@ def resolve_table_expression(schema_expression:Optional[str],
     if schema_expression is not None:
         schema = resolve_expression(expression=schema_expression,\
                                     dataset_parameters=dataset_parameters,\
-                                    pipeline_parameters=pipeline_parameters)
+                                    pipeline_parameters=pipeline_parameters,\
+                                    linked_service_parameters=dict())
     
     table = resolve_expression(expression=table_expression,\
                                 dataset_parameters=dataset_parameters,\
-                                pipeline_parameters=pipeline_parameters)
+                                pipeline_parameters=pipeline_parameters,\
+                                linked_service_parameters=dict())
     
     if schema_expression is None and\
     not isinstance(table,Unresolved):
@@ -432,14 +454,16 @@ def resolve_table_expression(schema_expression:Optional[str],
 
 def resolve_parameter(parameter:Optional[ParameterValue],\
                       dataset_parameters:Dict[str, str],\
-                      pipeline_parameters:Dict[str, str])->Optional[str]:
+                      pipeline_parameters:Dict[str, str],\
+                      linked_service_parameters:Dict[str,str])->Optional[str]:
     
     if parameter is None:
         return None
     
     result = resolve_expression(expression=parameter.value,\
                        dataset_parameters=dataset_parameters,\
-                       pipeline_parameters=pipeline_parameters)
+                       pipeline_parameters=pipeline_parameters,\
+                       linked_service_parameters=linked_service_parameters)
     
     if isinstance(result,Resolved):
         return result.value
@@ -454,15 +478,18 @@ def resolve_blob_expression(container:Optional[ParameterValue],\
     
     resolved_container = resolve_parameter(parameter=container,\
                                            dataset_parameters=dataset_parameters,\
-                                           pipeline_parameters=pipeline_parameters)
+                                           pipeline_parameters=pipeline_parameters,\
+                                           linked_service_parameters=dict())
 
     resolved_folder_path = resolve_parameter(parameter=folder_path,\
                                             dataset_parameters=dataset_parameters,\
-                                            pipeline_parameters=pipeline_parameters)
+                                            pipeline_parameters=pipeline_parameters,\
+                                            linked_service_parameters=dict())
 
     resolved_file_name = resolve_parameter(parameter=file_name,\
                                            dataset_parameters=dataset_parameters,\
-                                           pipeline_parameters=pipeline_parameters)
+                                           pipeline_parameters=pipeline_parameters,\
+                                           linked_service_parameters=dict())
 
     parts = [x for x in [resolved_container,resolved_folder_path,resolved_file_name] if x is not None]
 
@@ -533,7 +560,9 @@ def resolve_dataset_parameter(dataset_parameters:Dict[str,Parameter],\
     resolved_dataset_parameter_result = { 
         parameter_name : resolve_expression(expression=unresolved_dataset_parameters[parameter_name].value,\
                                             dataset_parameters=dict(),\
-                                            pipeline_parameters=pipeline_parameter)
+                                            pipeline_parameters=pipeline_parameter,\
+                                            linked_service_parameters=dict())
+
         for parameter_name in unresolved_dataset_parameters 
     }
 
