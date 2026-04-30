@@ -285,7 +285,7 @@ class SynapseClient:
 
                 # SqlPoolTable does not have the linked servie reference name
                 
-                linked_service_name = ""
+                linked_service_name = None
 
                 if dataset_resource.properties.linked_service_name is not None:
                     linked_service_name = dataset_resource.properties.linked_service_name.reference_name

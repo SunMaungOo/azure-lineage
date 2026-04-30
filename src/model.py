@@ -36,6 +36,8 @@ class Parameter:
 class QueryDataset:
     name:str
     type:DatasetType
+    # required for synapse sql pool
+    reference_name:Optional[str]
 
 @dataclass
 class SingleTableDataset:
@@ -43,6 +45,8 @@ class SingleTableDataset:
     type:DatasetType
     schema:Optional[Parameter]
     table:Optional[Parameter]
+    # required for synapse sql pool
+    reference_name:Optional[str]
 
 @dataclass
 class LocationDataset:
@@ -60,7 +64,7 @@ class Dataset:
     name:str
     #data set type 
     type:DatasetType
-    linked_service_name:str
+    linked_service_name:Optional[str]
     info:Optional[ProcessDataset]
 
 @dataclass

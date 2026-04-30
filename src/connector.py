@@ -150,14 +150,25 @@ def get_dataset_info(dataset_resource:DatasetResource,\
             if dataset_resource.properties.table is not None:
                 table = create_parameter(parameter_value=dataset_resource.properties.table)
 
+        reference_name = None
+
+        if is_synapse_sql_pool(dataset_resource=dataset_resource,\
+                               dataset_type=dataset_type):
+            reference_name = dataset_resource.properties.additional_properties["sqlPool"]["referenceName"]
+            
+
         if schema is None and table is None:
+
             info = QueryDataset(name=dataset_name,\
-                                type=dataset_type)
+                                type=dataset_type,\
+                                reference_name=reference_name)
         else:
+           
            info = SingleTableDataset(name=dataset_name,\
                                      type=dataset_type,\
                                      schema=schema,\
-                                     table=table)
+                                     table=table,\
+                                     reference_name=reference_name)
            
     elif dataset_type==DatasetType.Blob:
 
@@ -201,7 +212,8 @@ def get_dataset_info(dataset_resource:DatasetResource,\
             name=dataset_name,
             type=DatasetType.MongoDB,\
             schema=None,\
-            table=collection
+            table=collection,\
+            reference_name=None
         )
 
     return info

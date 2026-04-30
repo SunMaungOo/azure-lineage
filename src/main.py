@@ -26,7 +26,7 @@ from model import (
 from connector import get_sql_script,get_dataset_type,get_dataset_info,get_linked_service_info,get_linked_service_type
 from client import AzureClient
 from config import get_api_client,DAYS_SEARCH,OPENLINEAGE_NAMESPACE,PLUGIN_FOLDER_PATH
-from config import OPENLINEAGE_OUTPUT_FILE_PATH,OPENLINEAGE_PRODUCER,IS_USE_FQN,LINEAGE_OUTPUT_FILE_PATH,IS_DEBUG,DATA_FACTORY_OR_SYNAPSE_WORKSPACE_NAME
+from config import OPENLINEAGE_OUTPUT_FILE_PATH,OPENLINEAGE_PRODUCER,IS_USE_FQN,LINEAGE_OUTPUT_FILE_PATH,IS_DEBUG,DATA_FACTORY_OR_SYNAPSE_WORKSPACE_NAME,IS_AZURE_DATA_FACTORY
 import uuid
 from datetime import datetime,timezone
 import json
@@ -103,10 +103,12 @@ def get_datasets(client:AzureClient)->Optional[List[Dataset]]:
             info = get_dataset_info(dataset_resource=dataset_resource,\
                                     dataset_name=dataset_name,\
                                     dataset_type=dataset_type)
+            
             datasets.append(Dataset(name=dataset_name,\
                                     type=dataset_type,\
                                     linked_service_name=linked_service_name,\
                                     info = info))
+            
         return datasets
     
     except Exception:
@@ -299,6 +301,11 @@ def get_linked_service_host_prefix(linked_service:LinkedService)->Optional[str]:
     
     return None
 
+def get_sql_pool_host_prefix(synapse_workspace_name:str,\
+                             sql_pool_name:str):
+    
+    return f"{synapse_workspace_name}.sql.azuresynapse.net.{sql_pool_name}"
+
 def add_source_host_prefix(table_value:str,host_prefix:str)->str:
     """
     Append the host information to the schema name and table name
@@ -323,7 +330,8 @@ def add_source_host_prefix(table_value:str,host_prefix:str)->str:
 def resolve_source_table(activity:GenericActivity,\
                          runtime:PipelineRuntimeContext,\
                          linked_services:List[LinkedService],\
-                         is_use_fqn:bool)->Set[str]:
+                         is_use_fqn:bool,\
+                         synapse_workspace_name:Optional[str])->Set[str]:
     
     input_dataset = activity.input_dataset
 
@@ -422,19 +430,37 @@ def resolve_source_table(activity:GenericActivity,\
 
     if is_use_fqn and len(source_tables)>0:
 
-        linked_service = find_linked_service(linked_services=linked_services,\
-                                             search_linked_service_name=input_dataset.linked_service_name)
-        
-        if linked_service is not None:
+        is_sql_pool = input_dataset.linked_service_name is None\
+        and isinstance(input_dataset_info,QueryDataset)\
+        and synapse_workspace_name is not None
 
-            source_host_prefix = get_linked_service_host_prefix(linked_service=linked_service)
+        source_host_prefix = None
 
-            if source_host_prefix is not None:
-                source_tables = {
-                    add_source_host_prefix(table_value=table,\
-                                           host_prefix=source_host_prefix) 
-                    for table in source_tables
-                }
+        if is_sql_pool:
+
+            sql_pool_name = input_dataset_info.reference_name
+
+            source_host_prefix = get_sql_pool_host_prefix(synapse_workspace_name=synapse_workspace_name,\
+                                     sql_pool_name=sql_pool_name)
+            
+        else:
+
+            if input_dataset.linked_service_name is not None:
+
+                linked_service = find_linked_service(linked_services=linked_services,\
+                                                    search_linked_service_name=input_dataset.linked_service_name)
+
+                if linked_service is not None:
+                    source_host_prefix = get_linked_service_host_prefix(linked_service=linked_service)
+
+
+        if source_host_prefix is not None:
+
+            source_tables = {
+                add_source_host_prefix(table_value=table,\
+                                        host_prefix=source_host_prefix) 
+                for table in source_tables
+            }
 
     
     return source_tables
@@ -442,7 +468,8 @@ def resolve_source_table(activity:GenericActivity,\
 def resolve_target_table(activity:GenericActivity,\
                          runtime:PipelineRuntimeContext,\
                          linked_services:List[LinkedService],\
-                         is_use_fqn:bool)->Optional[str]:
+                         is_use_fqn:bool,\
+                         synapse_workspace_name:Optional[str])->Optional[str]:
 
     
     output_dataset = activity.output_dataset
@@ -496,16 +523,34 @@ def resolve_target_table(activity:GenericActivity,\
 
     if is_use_fqn and target_table is not None:
 
-        linked_service = find_linked_service(linked_services=linked_services,\
-                                             search_linked_service_name=output_dataset.linked_service_name)
+        is_sql_pool = output_dataset.linked_service_name is None\
+        and isinstance(output_dataset_info,SingleTableDataset) and\
+        synapse_workspace_name is not None
+
+        target_host_prefix = None
+
+        if is_sql_pool:
+
+            sql_pool_name = output_dataset_info.reference_name
+
+            target_host_prefix = get_sql_pool_host_prefix(synapse_workspace_name=synapse_workspace_name,\
+                                     sql_pool_name=sql_pool_name)
         
-        if linked_service is not None:
+        else:
 
-            target_host_prefix = get_linked_service_host_prefix(linked_service=linked_service)
+            if output_dataset.linked_service_name is not None:
 
-            if target_host_prefix is not None:
-                target_table = add_source_host_prefix(table_value=target_table,\
-                                                      host_prefix=target_host_prefix)
+                linked_service = find_linked_service(linked_services=linked_services,\
+                                                    search_linked_service_name=output_dataset.linked_service_name)
+                           
+                if linked_service is not None:
+                    target_host_prefix = get_linked_service_host_prefix(linked_service=linked_service)
+
+        if target_host_prefix is not None:
+
+            target_table = add_source_host_prefix(table_value=target_table,\
+                                                  host_prefix=target_host_prefix)
+
                             
     return target_table
 
@@ -533,7 +578,8 @@ def get_pipeline_table_lineage(static_pipeline:StaticPipeline,\
                                 runtime_context:PipelineRuntimeContext,\
                                 linked_services:List[LinkedService],\
                                 is_use_fqn:bool,\
-                                plugins:List[LineagePluginWrapper])->Tuple[List[ActivityLineageContext],Set[LineageActivityInfo]]:
+                                plugins:List[LineagePluginWrapper],\
+                                synapse_workspace_name:Optional[str])->Tuple[List[ActivityLineageContext],Set[LineageActivityInfo]]:
     """
     Return lineage of each activity in the pipeline , and activity it have skip
     """
@@ -610,9 +656,8 @@ def get_pipeline_table_lineage(static_pipeline:StaticPipeline,\
                     
                                     
                 if is_sql_pool: 
-                    
                     database_conection = get_sql_pool_database_connection(linked_service_name=linked_service_name,\
-                                                                          synapse_workspace_name=DATA_FACTORY_OR_SYNAPSE_WORKSPACE_NAME)
+                                                                          synapse_workspace_name=synapse_workspace_name)
 
                 plugin_lineages = resolve_activity_plugins(plugins=plugins,\
                                 context=plugin_context,\
@@ -679,12 +724,14 @@ def get_pipeline_table_lineage(static_pipeline:StaticPipeline,\
             source_tables = resolve_source_table(activity=generic_activity,\
                                                 runtime=runtime_context,\
                                                 linked_services=linked_services,\
-                                                is_use_fqn=is_use_fqn)
+                                                is_use_fqn=is_use_fqn,\
+                                                synapse_workspace_name=synapse_workspace_name)
             
             target_table = resolve_target_table(activity=generic_activity,\
                                                 runtime=runtime_context,\
                                                 linked_services=linked_services,\
-                                                is_use_fqn=is_use_fqn)
+                                                is_use_fqn=is_use_fqn,\
+                                                synapse_workspace_name=synapse_workspace_name)
         
             # we cannot add lineage when we cannot parse the sink 
 
@@ -1111,13 +1158,19 @@ def main()->int:
 
     lineage_activity_infos:Set[LineageActivityInfo] = set()
 
+    synapse_workspace_name = None
+
+    if not IS_AZURE_DATA_FACTORY:
+        synapse_workspace_name = DATA_FACTORY_OR_SYNAPSE_WORKSPACE_NAME
+
     for pipeline_name in runtime_contexts:
         
         activity_lineage,lineage_activities = get_pipeline_table_lineage(static_pipeline=static_pipelines[pipeline_name],\
                                               runtime_context=runtime_contexts[pipeline_name],\
                                               linked_services=linked_services,\
                                               is_use_fqn=IS_USE_FQN,\
-                                              plugins=activity_plugins)
+                                              plugins=activity_plugins,\
+                                              synapse_workspace_name=synapse_workspace_name)
         
         lineage_activity_infos = lineage_activity_infos.union(lineage_activities)
         
