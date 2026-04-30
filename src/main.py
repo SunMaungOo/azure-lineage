@@ -56,7 +56,7 @@ from plugin import (
 )
 from pluginhelper import (
     resolve_activity_plugins,
-    get_database_connections,
+    get_database_connection,
     load_plugins,register_plugins,
     get_activity_plugins,
     get_writer_plugins,
@@ -589,9 +589,25 @@ def get_pipeline_table_lineage(static_pipeline:StaticPipeline,\
 
                 if linked_service is not None and\
                     not is_sql_pool:   
-                    
-                    database_conection = get_database_connections(linked_service=linked_service)
 
+                    pipeline_parameters:Dict[str,str] = dict()
+
+                    linked_service_parameters:Dict[str,str] = dict()
+
+                    if has_field(plugin_context,"pipeline_parameters") and\
+                        isinstance(plugin_context.pipeline_parameters,dict):
+
+                        pipeline_parameters = plugin_context.pipeline_parameters
+
+                    if has_field(plugin_context,"linked_service_parameters") and\
+                        isinstance(plugin_context.linked_service_parameters,dict):
+
+                        linked_service_parameters = plugin_context.linked_service_parameters     
+
+                    database_conection = get_database_connection(linked_service=linked_service,\
+                                                                pipeline_parameters=pipeline_parameters,\
+                                                                linked_service_parameters=linked_service_parameters)   
+                    
                                     
                 if is_sql_pool: 
                     
@@ -872,7 +888,7 @@ def get_procedure_context(procedure_activity:Any,
 
         linked_service_parameters:Dict[str,str] = dict()
 
-        store_procedure_raw_parameters:Dict[str,Any] = dict()
+        linked_service_raw_parameters:Dict[str,Any] = dict()
 
         if has_field(procedure_activity,"stored_procedure_parameters"):
             raw_parameters:Optional[Dict[str,Any]] = procedure_activity.stored_procedure_parameters
@@ -894,7 +910,7 @@ def get_procedure_context(procedure_activity:Any,
             linked_service_name = procedure_activity.linked_service_name.reference_name
 
             if has_field(procedure_activity.linked_service_name,"parameters"):
-                store_procedure_raw_parameters = procedure_activity.linked_service_name.parameters
+                linked_service_raw_parameters = procedure_activity.linked_service_name.parameters
         
         # for sql pool
 
@@ -904,10 +920,10 @@ def get_procedure_context(procedure_activity:Any,
 
             is_sql_pool = True
 
-        if store_procedure_raw_parameters is not None:
-            for parameter_name in store_procedure_raw_parameters:
+        if linked_service_raw_parameters is not None:
+            for parameter_name in linked_service_raw_parameters:
 
-                parameter = create_parameter(parameter_value=store_procedure_raw_parameters[parameter_name])
+                parameter = create_parameter(parameter_value=linked_service_raw_parameters[parameter_name])
 
                 # only support static parameter type at the moment
 

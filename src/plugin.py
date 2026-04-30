@@ -86,7 +86,7 @@ class LineagePlugin(ABC):
     @abstractmethod
     def init(self)->bool:
         """
-        init the plugion
+        init the plugin
         """
         pass
 

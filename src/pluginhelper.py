@@ -8,6 +8,7 @@ from model import LinkedService,DatabaseLinkedService,BlobLinkedService,PLUGIN_T
 from abc import ABC
 import sys
 from types import ModuleType
+from core import resolve_parameter
 
 class BasePluginWrapper(ABC):
 
@@ -100,22 +101,46 @@ class LineageWriterPluginWrapper(BasePluginWrapper):
         except Exception as e:
             self.logger.error(f"Plugin {self.name} : write failed - {e}")
 
-def get_database_connections(linked_service:LinkedService)->LinkedServiceConnection:
+def get_database_connection(linked_service:LinkedService,\
+                             pipeline_parameters:Dict[str,str],\
+                             linked_service_parameters:Dict[str,str])->LinkedServiceConnection:
     
     properties:LinkedServiceProperties = {}
 
     if isinstance(linked_service.info,DatabaseLinkedService):
 
         if linked_service.info.host is not None:
-            properties["host"] = linked_service.info.host.value
+
+            host_value = resolve_parameter(parameter=linked_service.info.host,\
+                                           dataset_parameters={},
+                                           pipeline_parameters=pipeline_parameters,\
+                                           linked_service_parameters=linked_service_parameters)
+            
+            if host_value is not None:
+                properties["host"] = linked_service.info.host.value
         
         if linked_service.info.database is not None:
-            properties["database"] = linked_service.info.database.value
+
+            database_value = resolve_parameter(parameter=linked_service.info.database,\
+                                               dataset_parameters={},\
+                                               pipeline_parameters=pipeline_parameters,\
+                                               linked_service_parameters=linked_service_parameters)
+            
+            if database_value is not None:                        
+                properties["database"] = database_value
     
     elif isinstance(linked_service.info,BlobLinkedService):
 
         if linked_service.info.url is not None:
-            properties["url"] = linked_service.info.url.value
+
+            url_value = resolve_parameter(parameter=linked_service.info.url,\
+                                         dataset_parameters={},\
+                                         pipeline_parameters=pipeline_parameters,\
+                                         linked_service_parameters=linked_service_parameters)
+            
+            if url_value is not None:
+                properties["url"] = url_value
+
 
     return LinkedServiceConnection(
         name=linked_service.name,
