@@ -4,7 +4,7 @@ from logging import Logger
 from pathlib import Path
 from importlib.util import spec_from_file_location,module_from_spec
 from inspect import getmembers,isabstract,isclass
-from model import LinkedService,DatabaseLinkedService,BlobLinkedService,PLUGIN_TYPES
+from model import LinkedService,DatabaseLinkedService,BlobLinkedService,PLUGIN_TYPES,LinkedServiceType
 from abc import ABC
 import sys
 from types import ModuleType
@@ -122,6 +122,25 @@ def get_database_connections(linked_service:LinkedService)->LinkedServiceConnect
         type=linked_service.type.name,
         properties=properties
     )
+
+def get_sql_pool_database_connection(linked_service_name:str,\
+                                     synapse_workspace_name:str)->LinkedServiceConnection:
+    
+    properties:LinkedServiceProperties = {}
+
+    # deciated synapse sql pool host always have this format
+
+    properties["host"] = f"{synapse_workspace_name}.sql.azuresynapse.net"
+    properties["database"] = linked_service_name
+
+    return LinkedServiceConnection(
+        name=linked_service_name,
+        type=LinkedServiceType.Synapse.name,
+        properties=properties
+    )
+
+
+
 
 def get_activity_plugins(plugins:List[BasePluginWrapper])->List[LineagePluginWrapper]:
     return [x for x in plugins if isinstance(x,LineagePluginWrapper)]

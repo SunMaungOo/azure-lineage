@@ -26,7 +26,7 @@ from model import (
 from connector import get_sql_script,get_dataset_type,get_dataset_info,get_linked_service_info,get_linked_service_type
 from client import AzureClient
 from config import get_api_client,DAYS_SEARCH,OPENLINEAGE_NAMESPACE,PLUGIN_FOLDER_PATH
-from config import OPENLINEAGE_OUTPUT_FILE_PATH,OPENLINEAGE_PRODUCER,IS_USE_FQN,LINEAGE_OUTPUT_FILE_PATH,IS_DEBUG
+from config import OPENLINEAGE_OUTPUT_FILE_PATH,OPENLINEAGE_PRODUCER,IS_USE_FQN,LINEAGE_OUTPUT_FILE_PATH,IS_DEBUG,DATA_FACTORY_OR_SYNAPSE_WORKSPACE_NAME
 import uuid
 from datetime import datetime,timezone
 import json
@@ -61,7 +61,8 @@ from pluginhelper import (
     get_activity_plugins,
     get_writer_plugins,
     resolve_writer_plugins,
-    LineagePluginWrapper
+    LineagePluginWrapper,
+    get_sql_pool_database_connection
 )
 
 logger = logging.getLogger("azure-lineage")
@@ -550,6 +551,8 @@ def get_pipeline_table_lineage(static_pipeline:StaticPipeline,\
 
         is_skippped = False
 
+        is_sql_pool = False
+
         if generic_activity.activity_type==ActivityType.Execute:
             continue
 
@@ -558,7 +561,7 @@ def get_pipeline_table_lineage(static_pipeline:StaticPipeline,\
             plugin_context = None
 
             if generic_activity.activity_type==ActivityType.Procedure:
-                plugin_context = get_procedure_context(procedure_activity=generic_activity.raw_activity,\
+                plugin_context,is_sql_pool = get_procedure_context(procedure_activity=generic_activity.raw_activity,\
                                                 runtime_context=runtime_context)
                             
                 
@@ -583,9 +586,17 @@ def get_pipeline_table_lineage(static_pipeline:StaticPipeline,\
                 if linked_service_name is not None:
                     linked_service = find_linked_service(linked_services=linked_services,
                                         search_linked_service_name=linked_service_name)
-                
-                if linked_service is not None:  
+
+                if linked_service is not None and\
+                    not is_sql_pool:   
+                    
                     database_conection = get_database_connections(linked_service=linked_service)
+
+                                    
+                if is_sql_pool: 
+                    
+                    database_conection = get_sql_pool_database_connection(linked_service_name=linked_service_name,\
+                                                                          synapse_workspace_name=DATA_FACTORY_OR_SYNAPSE_WORKSPACE_NAME)
 
                 plugin_lineages = resolve_activity_plugins(plugins=plugins,\
                                 context=plugin_context,\
@@ -849,7 +860,9 @@ def get_static_pipeline(pipeline:APIPipelineResource,\
     )
 
 def get_procedure_context(procedure_activity:Any,
-                          runtime_context:PipelineRuntimeContext)->Optional[StoreProcedurePluginContext]:
+                          runtime_context:PipelineRuntimeContext)->Optional[Tuple[StoreProcedurePluginContext,bool]]:
+    
+    is_sql_pool = False
     
     try:
 
@@ -889,6 +902,8 @@ def get_procedure_context(procedure_activity:Any,
             procedure_activity.sql_pool is not None:
             linked_service_name = procedure_activity.sql_pool.reference_name
 
+            is_sql_pool = True
+
         if store_procedure_raw_parameters is not None:
             for parameter_name in store_procedure_raw_parameters:
 
@@ -910,7 +925,7 @@ def get_procedure_context(procedure_activity:Any,
             procedure_parameters=procedure_parameters,\
             pipeline_parameters=runtime_context.pipeline_parameters,\
             linked_service_parameters=linked_service_parameters
-        )
+        ),is_sql_pool
         
     except Exception:
 
@@ -919,7 +934,7 @@ def get_procedure_context(procedure_activity:Any,
             "activity": procedure_activity.name
         })
 
-        return None
+    return None,False
 
 def get_script_context(script_activity:Any,
                         runtime_context:PipelineRuntimeContext)->Optional[ScriptPluginContext]:
