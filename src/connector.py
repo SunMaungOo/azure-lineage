@@ -332,51 +332,67 @@ def get_mssql_processed_linked_service(mssql_linked_service_resource:APILinkedSe
 
 def get_oracle_processed_linked_service(oracle_linked_service_resource:APILinkedServiceResource,\
                               linked_service_parameter_value:str)->Optional[ProcessLinkedService]:
-    
+        
     connection_string:str = None
 
     connection_properties:Dict[str,str] = None
 
-    # for old version of oracle linked service
+    is_processed = False
 
-    if has_field(oracle_linked_service_resource.properties,"connection_string"):
-        connection_string = oracle_linked_service_resource.properties.connection_string
-    elif has_field(oracle_linked_service_resource.properties.typeProperties,"connectionString"):
+    if not is_processed and\
+        has_field(oracle_linked_service_resource.properties,"server"):
+
+        server_info:str = oracle_linked_service_resource.properties.server
+
+        if server_info is not None:
+        
+            # oracle TNS (Transparent Network Substrate) descriptor string 
+
+            if "(DESCRIPTION=" in server_info:
+                
+                connection_properties = dict()
+
+                host_match = re.search(r'\(HOST=([^)]+)\)', server_info, re.IGNORECASE)
+
+                if host_match:
+                    connection_properties["host"]=host_match.group(1)
+
+                sid_match = re.search(r'\(SID=([^)]+)\)', server_info, re.IGNORECASE)
+
+                if sid_match:
+                    connection_properties["sid"]=sid_match.group(1)
+                
+                service_name_match = re.search(r'\(SERVICE_NAME=([^)]+)\)', server_info, re.IGNORECASE)
+
+                if service_name_match:
+                    connection_properties["servicename"]=service_name_match.group(1)
+
+            else:
+                # easy connect format. Example host:port/serviceName 
+                connection_properties = dict()
+                connection_properties["host"] = server_info.split(":")[0]
+                connection_properties["servicename"] = server_info.split("/")[1]
+
+            is_processed = True
+
+
+    if not is_processed and \
+        has_field(oracle_linked_service_resource.properties,"typeProperties") and \
+        has_field(oracle_linked_service_resource.properties.typeProperties,"connectionString"):
         # for new version of oracle server linked service
         connection_string = oracle_linked_service_resource.properties.typeProperties.connectionString
-    elif has_field(oracle_linked_service_resource.properties.typeProperties,"server"):
-
-        server_info:str = oracle_linked_service_resource.properties.typeProperties.server
-
-        # oracle TNS (Transparent Network Substrate) descriptor string 
-
-        if "(DESCRIPTION=" in server_info:
-            
-            connection_properties = dict()
-
-            host_match = re.search(r'\(HOST=([^)]+)\)', server_info, re.IGNORECASE)
-
-            if host_match:
-                connection_properties["host"]=host_match.group(1)
-
-            sid_match = re.search(r'\(SID=([^)]+)\)', server_info, re.IGNORECASE)
-
-            if sid_match:
-                connection_properties["sid"]=sid_match.group(1)
-            
-            service_name_match = re.search(r'\(SERVICE_NAME=([^)]+)\)', server_info, re.IGNORECASE)
-
-            if service_name_match:
-                connection_properties["servicename"]=service_name_match.group(1)
-
-        else:
-            # easy connect format. Example host:port/serviceName 
-            connection_properties = dict()
-            connection_properties["host"] = server_info.split(":")[0]
-            connection_properties["servicename"] = server_info.split("/")[1]
-
-     #if it is a dict type , it mean the linked service connection string is in azure key-vault (we are going to ignore it)
         
+        is_processed = connection_string is not None
+        
+    # for old version of oracle linked service
+    if not is_processed and \
+        has_field(oracle_linked_service_resource.properties,"connection_string"):
+        connection_string = oracle_linked_service_resource.properties.connection_string
+
+        is_processed = connection_string is not None
+
+     #if connection_string it is a dict type , it mean the linked service connection string is in azure key-vault (we are going to ignore it)
+
     if connection_properties is None and \
         not isinstance(connection_string,str):
         return None
