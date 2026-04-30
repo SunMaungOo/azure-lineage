@@ -155,9 +155,14 @@ def get_dataset_info(dataset_resource:DatasetResource,\
         if is_synapse_sql_pool(dataset_resource=dataset_resource,\
                                dataset_type=dataset_type):
             reference_name = dataset_resource.properties.additional_properties["sqlPool"]["referenceName"]
-            
 
-        if schema is None and table is None:
+        # the user may set the empty schema and empty table field but will set the query field in the activity 
+        # in those case , we must set the dataset to be QueryDataset instead of SingleTableDataset to get lineage
+         
+        is_query_dataset =  (schema is None and table is None) or\
+        (len(schema.value.strip())==0 and len(table.value.strip())==0)
+
+        if is_query_dataset:
 
             info = QueryDataset(name=dataset_name,\
                                 type=dataset_type,\
