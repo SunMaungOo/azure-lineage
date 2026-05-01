@@ -1019,6 +1019,8 @@ def get_script_context(script_activity:Any,
             
             script_parameter = create_parameter(parameter_value=script_activity.scripts[0].text)
 
+            script = script_parameter.value
+
             if script_parameter.parameter_type==ParameterType.Expression:
                 
                 resolved_parameter = resolve_parameter(script_parameter,\
@@ -1028,6 +1030,7 @@ def get_script_context(script_activity:Any,
                 
                 if resolved_parameter is not None:
                     script = resolved_parameter
+
                 
         return ScriptPluginContext(
             activity_name=script_activity.name,\
