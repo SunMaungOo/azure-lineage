@@ -42,7 +42,8 @@ from core import (
     expand_activities,
     resolve_blob_expression,
     normalize_blob_path,
-    resolve_dataset_parameter
+    resolve_dataset_parameter,
+    resolve_parameter
 )
 from util import has_field,create_parameter
 from formatter import LogFormatter
@@ -1011,14 +1012,23 @@ def get_script_context(script_activity:Any,
     
             linked_service_name = script_activity.linked_service_name.reference_name
 
-        script = None
+        script = ""
 
         if has_field(script_activity,"scripts") and\
             script_activity.scripts is not None:
             
-            script = create_parameter(parameter_value=script_activity.scripts[0].text).value
-        
+            script_parameter = create_parameter(parameter_value=script_activity.scripts[0].text)
 
+            if script_parameter.parameter_type==ParameterType.Expression:
+                
+                resolved_parameter = resolve_parameter(script_parameter,\
+                                dataset_parameters={},\
+                                pipeline_parameters=runtime_context.pipeline_parameters,\
+                                linked_service_parameters={})
+                
+                if resolved_parameter is not None:
+                    script = resolved_parameter
+                
         return ScriptPluginContext(
             activity_name=script_activity.name,\
             linked_service_name=linked_service_name,\
