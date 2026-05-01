@@ -653,9 +653,8 @@ def get_pipeline_table_lineage(static_pipeline:StaticPipeline,\
 
                     database_conection = get_database_connection(linked_service=linked_service,\
                                                                 pipeline_parameters=pipeline_parameters,\
-                                                                linked_service_parameters=linked_service_parameters)   
-                    
-                                    
+                                                                linked_service_parameters=linked_service_parameters)
+                                       
                 if is_sql_pool: 
                     database_conection = get_sql_pool_database_connection(linked_service_name=linked_service_name,\
                                                                           synapse_workspace_name=synapse_workspace_name)
@@ -1007,12 +1006,19 @@ def get_script_context(script_activity:Any,
         
         linked_service_name = None
 
+        linked_service_parameters:Dict[str,str] = dict()
+
+        linked_service_raw_parameters:Dict[str,Any] = dict()
+
+        script = ""
+
         if has_field(script_activity,"linked_service_name") and\
             script_activity.linked_service_name is not None:
     
             linked_service_name = script_activity.linked_service_name.reference_name
 
-        script = ""
+            if has_field(script_activity.linked_service_name,"parameters"):
+                linked_service_raw_parameters = script_activity.linked_service_name.parameters
 
         if has_field(script_activity,"scripts") and\
             script_activity.scripts is not None:
@@ -1030,13 +1036,25 @@ def get_script_context(script_activity:Any,
                 
                 if resolved_parameter is not None:
                     script = resolved_parameter
+        
+        if linked_service_raw_parameters is not None:
+            for parameter_name in linked_service_raw_parameters:
 
-                
+                parameter = create_parameter(parameter_value=linked_service_raw_parameters[parameter_name])
+
+                # only support static parameter type at the moment
+
+                if parameter.parameter_type!=ParameterType.Static:
+                    continue
+
+                linked_service_parameters[parameter_name] = parameter.value
+
         return ScriptPluginContext(
             activity_name=script_activity.name,\
             linked_service_name=linked_service_name,\
             script=script,\
-            pipeline_parameters=runtime_context.pipeline_parameters
+            pipeline_parameters=runtime_context.pipeline_parameters,\
+            linked_service_parameters=linked_service_parameters
         )
 
     except Exception:

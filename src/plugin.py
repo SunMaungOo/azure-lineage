@@ -29,6 +29,8 @@ class ScriptPluginContext:
     linked_service_name:str
     script:str
     pipeline_parameters: Dict[str, str]
+    linked_service_parameters:Dict[str, str]
+
 
 @dataclass
 class LineageEdge:
