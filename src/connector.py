@@ -470,9 +470,21 @@ def get_mongodb_processed_linked_service(mongodb_linked_service_resource:APILink
         
         connection_string = connection_properties.connection_string
 
+    # add support for MongoDbV2
+
+    elif has_field(connection_properties,"typeProperties"):
+
+        type_properties = connection_properties.typeProperties
+
+        if has_field(type_properties,"connectionString") and\
+        type_properties.connectionString is not None:
+            
+            connection_string =  type_properties.connectionString
+        
     #if it is a dict type , it mean the linked service connection string is in azure key-vault (we are going to ignore it)
 
-    if isinstance(connection_string,dict):
+    if connection_string is None or\
+        isinstance(connection_string,dict):
         return None
     
     host_str = get_mongodb_host(connection_string)
