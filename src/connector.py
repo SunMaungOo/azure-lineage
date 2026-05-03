@@ -352,14 +352,21 @@ def get_oracle_processed_linked_service(oracle_linked_service_resource:APILinked
         
     connection_string:str = None
 
+    # with key values: host , servicename , sid
     connection_properties:Dict[str,str] = None
 
     is_processed = False
 
     if not is_processed and\
-        has_field(oracle_linked_service_resource.properties,"server"):
+        (has_field(oracle_linked_service_resource.properties,"server")
+         or has_field(oracle_linked_service_resource.properties.typeProperties,"server")):
 
-        server_info:str = oracle_linked_service_resource.properties.server
+        server_info:str = None
+
+        if has_field(oracle_linked_service_resource.properties,"server"):
+            server_info = oracle_linked_service_resource.properties.server
+        else:
+            server_info = oracle_linked_service_resource.properties.typeProperties.server
 
         if server_info is not None:
         
