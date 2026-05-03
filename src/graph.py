@@ -1,4 +1,9 @@
-from typing import List,Dict,Optional,Set
+from typing import (
+    List,
+    Dict,
+    Optional,
+    Set
+)
 from dataclasses import dataclass
 
 

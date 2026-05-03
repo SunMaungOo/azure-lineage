@@ -1,6 +1,36 @@
-from model import Activity,ActivityType,ParameterValue,Resolved,Unresolved,Parameter,ParameterType
-from typing import List,Dict,Optional,Any,Set
-from graph import Edge,merge_edge,replace_node_with_edge,remove_node,get_node_names
+from model import (
+    Activity,
+    ActivityType,
+    ParameterValue,
+    Resolved,
+    Unresolved,
+    Parameter,
+    ParameterType,
+    GenericActivity,
+    Dataset,
+    DatasetType,
+    StaticPipeline,
+    APIPipelineResource
+)
+from typing import (
+    List,
+    Dict,
+    Optional,
+    Any,
+    Set
+)
+from graph import (
+    Edge,
+    merge_edge,
+    replace_node_with_edge,
+    remove_node
+)
+from util import (
+    has_field,
+    create_parameter
+)
+from search import find_dataset
+
 import re
 
 WHOLE_DATASET_PATTERN = re.compile(r"^@dataset\(\)\.(\w+)$")
@@ -577,3 +607,135 @@ def resolve_dataset_parameter(dataset_parameters:Dict[str,Parameter],\
     return {**static_dataset_parameters,\
             **expression_dataset_parameters,\
             **resolved_dataset_parameter}
+
+
+def get_placeholder_activity(activity_name:str)->GenericActivity:
+    """
+    Return generic activity for activity we will wanted to support in the future
+    """
+    return GenericActivity(
+        name=activity_name,
+        activity_type=ActivityType.Unsupported,\
+        input_dataset=None,
+        output_dataset=None,\
+        input_dataset_parameters=list(),\
+        output_dataset_parameters=list(),\
+        is_input_supported=False,\
+        is_output_supported=False,\
+        raw_activity=None
+    )
+
+def get_generic_activity(raw_activity:Any,\
+                         datasets:List[Dataset])->GenericActivity:
+
+    activity_type = get_activity_type(raw_activity.type)
+
+    if activity_type==ActivityType.Procedure:
+
+        return GenericActivity(
+            name=raw_activity.name,
+            activity_type=ActivityType.Procedure,
+            input_dataset=None,
+            output_dataset=None,
+            input_dataset_parameters=list(),
+            output_dataset_parameters=list(),
+            is_input_supported=True,\
+            is_output_supported=False,\
+            raw_activity=raw_activity
+        )
+    
+    if activity_type==ActivityType.Script:
+
+        return GenericActivity(
+            name=raw_activity.name,
+            activity_type=ActivityType.Script,
+            input_dataset=None,
+            output_dataset=None,
+            input_dataset_parameters=list(),
+            output_dataset_parameters=list(),
+            is_input_supported=True,\
+            is_output_supported=False,\
+            raw_activity=raw_activity
+        ) 
+
+
+    # something went wrong when there is no inputs and output
+
+    if not has_field(raw_activity,"inputs") and not has_field(raw_activity,"outputs"):
+        return get_placeholder_activity(activity_name=raw_activity.name)
+    
+    # for more activity support , we need to modify this function
+
+    input_dataset_name = raw_activity.inputs[0].reference_name
+
+    output_dataset_name = raw_activity.outputs[0].reference_name
+
+    input_dataset = find_dataset(datasets=datasets,\
+                                 search_dataset_name=input_dataset_name)
+    
+    output_dataset = find_dataset(datasets=datasets,\
+                                 search_dataset_name=output_dataset_name)
+    is_input_supported = not(input_dataset is None or input_dataset.type==DatasetType.Unsupported)
+
+    is_output_supported = not(output_dataset is None or output_dataset.type==DatasetType.Unsupported)
+
+    input_dataset_parameters:Dict[str,Parameter] = dict()
+
+    if raw_activity.inputs[0].parameters is not None:
+
+        for parameter_name in raw_activity.inputs[0].parameters:
+            input_dataset_parameters[parameter_name] = create_parameter(raw_activity.inputs[0].parameters[parameter_name])
+
+    output_dataset_parameters:Dict[str,Parameter] = dict()
+
+    if raw_activity.outputs[0].parameters is not None:
+
+        for parameter_name in raw_activity.outputs[0].parameters:
+            output_dataset_parameters[parameter_name] = create_parameter(raw_activity.outputs[0].parameters[parameter_name])
+
+
+    if not is_input_supported:
+        input_dataset = None
+
+    if not is_output_supported:
+        output_dataset = None
+
+    return GenericActivity(
+        name=raw_activity.name,\
+        activity_type=activity_type,\
+        input_dataset=input_dataset,\
+        output_dataset=output_dataset,\
+        input_dataset_parameters=input_dataset_parameters,\
+        output_dataset_parameters=output_dataset_parameters,\
+        is_input_supported=is_input_supported,\
+        is_output_supported=is_output_supported,\
+        raw_activity=raw_activity
+    )
+
+
+def get_static_pipeline(pipeline:APIPipelineResource,\
+                        datasets:List[Dataset])->StaticPipeline:
+
+    virtual_graph = get_virtual_graph(activities=to_activities(raw_activities=pipeline.activities))
+
+    generic_activities:Dict[str,GenericActivity] = dict()
+
+    expanded_activities = expand_activities(raw_activities=pipeline.activities)
+
+    for edge in virtual_graph:
+
+        activity = expanded_activities.get(edge.node_name)   
+
+        if activity is None:
+            continue
+
+        generic_activity = get_generic_activity(raw_activity=activity,\
+                                                    datasets=datasets)
+            
+        generic_activities[activity.name] = generic_activity
+    
+    return StaticPipeline(
+        pipeline_name=pipeline.name,\
+        virtual_graph=virtual_graph,\
+        activities=generic_activities
+    )

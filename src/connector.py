@@ -513,3 +513,36 @@ def get_mongodb_processed_linked_service(mongodb_linked_service_resource:APILink
         host=host,
         database=database
     )
+
+def is_valid_lineage_linked_service(linked_service:LinkedService)->bool:
+    
+    if linked_service.type==LinkedServiceType.Unsupported:
+        return False
+    
+    elif isinstance(linked_service.info,DatabaseLinkedService):
+
+        return linked_service.info.host.parameter_type!=ParameterType.Expression and\
+        linked_service.info.database.parameter_type!=ParameterType.Expression
+    
+    elif isinstance(linked_service.info,BlobLinkedService):
+        return linked_service.info.url.parameter_type!=ParameterType.Expression
+
+    return False
+
+def get_linked_service_host_prefix(linked_service:LinkedService)->Optional[str]:
+
+    if not is_valid_lineage_linked_service(linked_service=linked_service):
+        return None
+    
+    if isinstance(linked_service.info,DatabaseLinkedService):
+        return f"{linked_service.info.host.value}.{linked_service.info.database.value}"
+    
+    elif isinstance(linked_service.info,BlobLinkedService):
+        return linked_service.info.url.value
+    
+    return None
+
+def get_sql_pool_host_prefix(synapse_workspace_name:str,\
+                             sql_pool_name:str):
+    
+    return f"{synapse_workspace_name}.sql.azuresynapse.net.{sql_pool_name}"

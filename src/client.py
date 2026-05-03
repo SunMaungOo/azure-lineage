@@ -1,16 +1,45 @@
 import os
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.datafactory import DataFactoryManagementClient
-from typing import List,Optional
-from model import APIDatasetResource,APITriggerResource,APIPipelineResource,APIPipelineRun,APIActivityRun,APILinkedServiceResource
-from datetime import datetime,timedelta,timezone
-from azure.mgmt.datafactory.models import RunFilterParameters,RunQueryFilter
-from datetime import datetime
+from typing import (
+    List,
+    Optional,
+    Dict,
+    Any
+)
+from model import (
+    APIDatasetResource,
+    APITriggerResource,
+    APIPipelineResource,
+    APIPipelineRun,
+    APIActivityRun,
+    APILinkedServiceResource,
+    Dataset,
+    LinkedService,
+    PipelineRuntimeContext,
+    ActivityType
+)
+from datetime import (
+    datetime,
+    timedelta,
+    timezone
+)
+from azure.mgmt.datafactory.models import (
+    RunFilterParameters,
+    RunQueryFilter
+)
 from azure.synapse.artifacts import ArtifactsClient
 from azure.core.exceptions import DeserializationError
 from munch import Munch
 from util import has_field
 import requests
+from connector import (
+    get_dataset_type,
+    get_dataset_info,
+    get_linked_service_info,
+    get_linked_service_type
+)
+from core import get_activity_type
 
 class AzureClient:
     """
@@ -509,3 +538,95 @@ class FallbackDataFactoryClient:
        
        except Exception:
            return None
+       
+def get_datasets(client:AzureClient)->Optional[List[Dataset]]:
+
+    datasets:List[Dataset] = list()
+
+    try:
+
+        #DatasetResource 
+
+        for dataset_resource in client.get_datasets():
+            
+            dataset_name = dataset_resource.dataset_name
+
+            dataset_type = get_dataset_type(azure_dataset_type=dataset_resource.azure_data_type)
+
+            linked_service_name = dataset_resource.linked_service_name
+
+            info = get_dataset_info(dataset_resource=dataset_resource,\
+                                    dataset_name=dataset_name,\
+                                    dataset_type=dataset_type)
+            
+            datasets.append(Dataset(name=dataset_name,\
+                                    type=dataset_type,\
+                                    linked_service_name=linked_service_name,\
+                                    info = info))
+            
+        return datasets
+    
+    except Exception:
+        return None       
+    
+def get_linked_service(client:AzureClient)->Optional[List[LinkedService]]:
+
+    linked_service:List[LinkedService] = list()
+
+    try:
+        
+        #LinkedServiceResource
+
+        for linked_service_resource in client.get_linked_service():
+            info = get_linked_service_info(linked_service_resource=linked_service_resource)
+
+            linked_service.append(
+                LinkedService(
+                    name=linked_service_resource.linked_service_name,\
+                    type= get_linked_service_type(azure_linked_service_type=linked_service_resource.azure_data_type),
+                    info=info
+                )
+            )
+        
+        return linked_service
+        
+    except Exception:
+        return None
+    
+
+def get_runtime_context(client:AzureClient,\
+                        pipeline_run:APIPipelineRun)->PipelineRuntimeContext:
+    
+    activity_source_inputs: Dict[str, Dict[str, Any]] = dict()
+
+    activities_run = client.get_activities_run(pipeline_run=pipeline_run)
+
+    pipeline_parameters:Dict[str,str] = dict()
+
+    if pipeline_run.parameters is not None:
+        pipeline_parameters = pipeline_run.parameters
+
+    for activity_run in activities_run:
+
+        if get_activity_type(activity_run.activity_type) == ActivityType.Copy and\
+            activity_run.input:
+
+            source = activity_run.input.get("source", {})   
+
+            # if our SqlPoolSource has no mapping , it fall back to CopySource based type , source field is in additional_properties
+
+            if not source and has_field(activity_run.input,"additional_properties"):
+                source = activity_run.input.additional_properties.get("source",{})
+
+            if source:
+                activity_source_inputs[activity_run.activity_name] = source
+
+    return PipelineRuntimeContext(
+        pipeline_name=pipeline_run.pipeline_name,\
+        run_id=pipeline_run.run_id,\
+        run_start=pipeline_run.run_start,\
+        run_end=pipeline_run.run_end,
+        pipeline_parameters=pipeline_parameters,\
+        activity_source_inputs=activity_source_inputs,
+        pipeline_run_status=pipeline_run.run_status
+    )

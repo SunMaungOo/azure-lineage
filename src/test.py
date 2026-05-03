@@ -1,5 +1,17 @@
-from model import Activity, ActivityType,Resolved,Unresolved,Parameter,ParameterType
-from graph import get_node_names,get_parent_nodes,Edge,merge_edge
+from model import (
+    Activity, 
+    ActivityType,
+    Resolved,
+    Unresolved,
+    Parameter,
+    ParameterType
+)
+from graph import (
+    get_node_names,
+    get_parent_nodes,
+    Edge,
+    merge_edge
+)
 from core import (
     branch_to_edges,
     get_flatten_branches,
@@ -11,8 +23,14 @@ from core import (
     normalize_blob_path,
     resolve_dataset_parameter
 )
-from typing import List,Dict
-from lineage import clean_sql,get_sql_lineage
+from typing import (
+    List,
+    Dict
+)
+from lineage import (
+    clean_sql,
+    get_sql_lineage
+)
 from copy import deepcopy
 from connector import get_mongodb_host
 

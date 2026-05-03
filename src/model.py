@@ -1,9 +1,21 @@
-from dataclasses import dataclass,field
+from dataclasses import (
+    dataclass,
+    field
+)
 from enum import Enum
-from typing import List,Optional,Union,Any,Dict
+from typing import (
+    List,
+    Optional,
+    Union,
+    Any,
+    Dict
+)
 from graph import Edge
 from datetime import datetime
-from plugin import LineagePlugin,LineageWriterPlugin
+from plugin import (
+    LineagePlugin,
+    LineageWriterPlugin
+)
 
 class DatasetType(Enum):
     Oracle = 1
