@@ -60,13 +60,16 @@ class BasePluginWrapper(ABC):
         
         try:
 
-            self.plugin.init()
-            self.is_healthy = True
+            self.is_healthy = self.plugin.init()
 
             if self.logger is not None:
-                self.logger.info(f"Plugin {self.name} : registered successfully")
 
-            return True     
+                if self.is_healthy:
+                    self.logger.info(f"Plugin {self.name} : registered successfully")
+                else:
+                    self.logger.info(f"Plugin {self.name} : registered fail")
+
+            return self.is_healthy     
         except ImportError as e:
 
             if self.logger is not None:
@@ -79,7 +82,7 @@ class BasePluginWrapper(ABC):
                 self.logger.info(f"Plugin {self.name} : init failed - {e}")
 
             return False
-
+        
 
 class LineagePluginWrapper(BasePluginWrapper):
 

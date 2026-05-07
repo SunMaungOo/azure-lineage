@@ -230,4 +230,4 @@ class LineageActivityInfo:
     pipeline_name:str
     activity_name:str
     activity_type:ActivityType
-    is_skipped:True
+    is_skipped:bool
