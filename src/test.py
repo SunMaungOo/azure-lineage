@@ -32,7 +32,15 @@ from lineage import (
     get_sql_lineage
 )
 from copy import deepcopy
-from connector import get_mongodb_host
+from connector import (
+    get_mongodb_host,
+    get_connection_properties,
+    get_mssql_processed_linked_service,
+    get_oracle_processed_linked_service,
+    get_mongodb_processed_linked_service
+)
+from munch import Munch
+
 
 # virtual-dom test
 
@@ -694,6 +702,215 @@ def test_get_mongodb_host_srv():
     mongodb_host = get_mongodb_host(mongodb_connection_string=connection_string)
 
     assert mongodb_host=="mongodb-host1.com"
+
+def test_get_connection_properties():
+    
+    connection_str = "Host=mydb.host.com;user=alice; pW =myPassword"
+
+    connection_properties = get_connection_properties(connection_str=connection_str)
+
+    assert len(connection_properties)==3
+    assert connection_properties["host"]=="mydb.host.com"
+    assert connection_properties["user"]=="alice"
+    assert connection_properties["pw"]=="myPassword"
+
+def test_get_mssql_processed_linked_service_tcp_host():
+
+    connection_properties = {
+        "connection_string":"Data Source = tcp:myhost.com,1433 ; Initial Catalog = mydb"
+    }
+
+    linked_service_info = get_mssql_processed_linked_service(mssql_linked_service_properties=Munch.fromDict(connection_properties))
+
+    assert linked_service_info is not None
+    assert linked_service_info.host.parameter_type==ParameterType.Static
+    assert linked_service_info.host.value=="myhost.com"
+    assert linked_service_info.database.parameter_type==ParameterType.Static
+    assert linked_service_info.database.value=="mydb"
+
+def test_get_mssql_processed_linked_service_host():
+
+    connection_properties = {
+        "connection_string":"Data Source = myhost.com; Initial Catalog = mydb"
+    }
+
+    linked_service_info = get_mssql_processed_linked_service(mssql_linked_service_properties=Munch.fromDict(connection_properties))
+
+    assert linked_service_info is not None
+    assert linked_service_info.host.parameter_type==ParameterType.Static
+    assert linked_service_info.host.value=="myhost.com"
+    assert linked_service_info.database.parameter_type==ParameterType.Static
+    assert linked_service_info.database.value=="mydb"
+
+def test_get_mssql_processed_linked_service_tcp_host_expression():
+
+    connection_properties = {
+        "connection_string":"Data Source = tcp:@{linkedService().host},1433 ; Initial Catalog = @{linkedService().db}"
+    }
+
+    linked_service_info = get_mssql_processed_linked_service(mssql_linked_service_properties=Munch.fromDict(connection_properties))
+
+    assert linked_service_info is not None
+    assert linked_service_info.host.parameter_type==ParameterType.Expression
+    assert linked_service_info.host.value=="@{linkedService().host}"
+    assert linked_service_info.database.parameter_type==ParameterType.Expression
+    assert linked_service_info.database.value=="@{linkedService().db}"
+
+def test_get_mssql_processed_linked_service_new_version_tcp_host():
+
+    connection_properties = {
+        "typeProperties":{
+            "connectionString":"Data Source = tcp:myhost.com,1433 ; Initial Catalog = mydb"
+        }
+    }
+
+    linked_service_info = get_mssql_processed_linked_service(mssql_linked_service_properties=Munch.fromDict(connection_properties))
+
+    assert linked_service_info is not None
+    assert linked_service_info.host.parameter_type==ParameterType.Static
+    assert linked_service_info.host.value=="myhost.com"
+    assert linked_service_info.database.parameter_type==ParameterType.Static
+    assert linked_service_info.database.value=="mydb"
+
+def test_get_mssql_processed_linked_service_new_version_server_info():
+
+    connection_properties = {
+        "typeProperties":{
+            "server":"myhost.com",
+            "database":"mydb"
+        }
+    }
+
+    linked_service_info = get_mssql_processed_linked_service(mssql_linked_service_properties=Munch.fromDict(connection_properties))
+
+    assert linked_service_info is not None
+    assert linked_service_info.host.parameter_type==ParameterType.Static
+    assert linked_service_info.host.value=="myhost.com"
+    assert linked_service_info.database.parameter_type==ParameterType.Static
+    assert linked_service_info.database.value=="mydb"
+
+
+def test_get_oracle_processed_linked_service_easy_connect():
+    
+    connection_properties = {
+        "server":"myhost:3000/myServiceName "
+    }
+
+    linked_service_info = get_oracle_processed_linked_service(oracle_linked_service_properties=Munch.fromDict(connection_properties))
+
+    assert linked_service_info is not None
+    assert linked_service_info.host.parameter_type==ParameterType.Static
+    assert linked_service_info.host.value=="myhost"
+    assert linked_service_info.database.parameter_type==ParameterType.Static
+    assert linked_service_info.database.value=="myServiceName"
+
+
+def test_get_oracle_processed_linked_service_tns_sid():
+    
+    connection_properties = {
+        "server":"(DESCRIPTION=   (ADDRESS=(PROTOCOL=TCP)(HOST=10.20.30.40)(PORT=1000))   (CONNECT_DATA=     (SID=mySid)   ) )"
+    }
+
+    linked_service_info = get_oracle_processed_linked_service(oracle_linked_service_properties=Munch.fromDict(connection_properties))
+
+    assert linked_service_info is not None
+    assert linked_service_info.host.parameter_type==ParameterType.Static
+    assert linked_service_info.host.value=="10.20.30.40"
+    assert linked_service_info.database.parameter_type==ParameterType.Static
+    assert linked_service_info.database.value=="mySid"
+
+def test_get_oracle_processed_linked_service_tns_service_name():
+    
+    connection_properties = {
+        "server":"(DESCRIPTION=   (ADDRESS=(PROTOCOL=TCP)(HOST=10.20.30.40)(PORT=1000))   (CONNECT_DATA=     (SERVICE_NAME=myServiceName)   ) )"
+    }
+
+    linked_service_info = get_oracle_processed_linked_service(oracle_linked_service_properties=Munch.fromDict(connection_properties))
+
+    assert linked_service_info is not None
+    assert linked_service_info.host.parameter_type==ParameterType.Static
+    assert linked_service_info.host.value=="10.20.30.40"
+    assert linked_service_info.database.parameter_type==ParameterType.Static
+    assert linked_service_info.database.value=="myServiceName"
+
+def test_get_oracle_processed_linked_service_new_version_tns_sid():
+    
+    connection_properties = {
+        "typeProperties":{
+            "server":"(DESCRIPTION=   (ADDRESS=(PROTOCOL=TCP)(HOST=10.20.30.40)(PORT=1000))   (CONNECT_DATA=     (SID=mySid)   ) )"
+        }
+    }
+
+    linked_service_info = get_oracle_processed_linked_service(oracle_linked_service_properties=Munch.fromDict(connection_properties))
+
+    assert linked_service_info is not None
+    assert linked_service_info.host.parameter_type==ParameterType.Static
+    assert linked_service_info.host.value=="10.20.30.40"
+    assert linked_service_info.database.parameter_type==ParameterType.Static
+    assert linked_service_info.database.value=="mySid"
+
+def test_get_oracle_processed_linked_service_new_version_tns_service_name():
+    
+    connection_properties = {
+        "typeProperties":{
+            "server":"(DESCRIPTION=   (ADDRESS=(PROTOCOL=TCP)(HOST=10.20.30.40)(PORT=1000))   (CONNECT_DATA=     (SERVICE_NAME=myServiceName)   ) )"
+        }
+    }
+
+    linked_service_info = get_oracle_processed_linked_service(oracle_linked_service_properties=Munch.fromDict(connection_properties))
+
+    assert linked_service_info is not None
+    assert linked_service_info.host.parameter_type==ParameterType.Static
+    assert linked_service_info.host.value=="10.20.30.40"
+    assert linked_service_info.database.parameter_type==ParameterType.Static
+    assert linked_service_info.database.value=="myServiceName"
+
+def test_get_oracle_processed_linked_service_connection_string():
+    
+    connection_properties = {
+        "typeProperties":{
+            "connectionString":"host=10.20.30.40;port=1000;serviceName=myServiceName"
+        }
+    }
+
+    linked_service_info = get_oracle_processed_linked_service(oracle_linked_service_properties=Munch.fromDict(connection_properties))
+
+    assert linked_service_info is not None
+    assert linked_service_info.host.parameter_type==ParameterType.Static
+    assert linked_service_info.host.value=="10.20.30.40"
+    assert linked_service_info.database.parameter_type==ParameterType.Static
+    assert linked_service_info.database.value=="myServiceName"
+
+def test_get_oracle_processed_linked_service_old_version_connection_string():
+    
+    connection_properties = {
+        "connection_string":"host=10.20.30.40;port=1000;serviceName=myServiceName"
+    }
+
+    linked_service_info = get_oracle_processed_linked_service(oracle_linked_service_properties=Munch.fromDict(connection_properties))
+
+    assert linked_service_info is not None
+    assert linked_service_info.host.parameter_type==ParameterType.Static
+    assert linked_service_info.host.value=="10.20.30.40"
+    assert linked_service_info.database.parameter_type==ParameterType.Static
+    assert linked_service_info.database.value=="myServiceName"
+
+def test_get_mongodb_processed_linked_service():
+
+    connection_properties = {
+        "connection_string":"mongodb://my-user:my-password@mongodb-host1.com:3000,mongodb-host2.com:3000",
+        "database":"mydb"
+    }
+
+    linked_service_info = get_mongodb_processed_linked_service(mongodb_linked_service_properties=Munch.fromDict(connection_properties))
+
+    assert linked_service_info is not None
+    assert linked_service_info.host.parameter_type==ParameterType.Static
+    assert linked_service_info.host.value=="mongodb-host1.com"
+    assert linked_service_info.database.parameter_type==ParameterType.Static
+    assert linked_service_info.database.value=="mydb"
+
+
 
 def run_all_test():
 

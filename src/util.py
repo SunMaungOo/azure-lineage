@@ -39,13 +39,17 @@ def create_parameter(parameter_value:Union[AZURE_PARAMETER_TYPES,Dict[str,str]])
     return Parameter(value=parameter_value["value"],parameter_type=ParameterType.Expression)
 
 def get_connection_properties(connection_str:str)->Dict[str,str]:
+    """
+    Extract key-value of the connectiong string. 
+    Key are converted to lowercase and white space are removed
+    """
     connection_propertity:Dict[str,str] = dict()
 
     for block in connection_str.split(";"):
         property_block = block.split("=")
 
         if len(property_block)>=2:
-            connection_propertity[property_block[0].replace(" ","").lower()] = property_block[1]
+            connection_propertity[property_block[0].replace(" ","").lower()] = property_block[1].strip()
 
     return connection_propertity
 

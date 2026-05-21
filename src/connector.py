@@ -17,6 +17,7 @@ from model import (
 from util import create_parameter,get_connection_properties,has_field
 from azure.mgmt.datafactory.models import DatasetResource
 import re
+from munch import Munch
 
 def get_mongodb_host(mongodb_connection_string:str)->Optional[str]:
     """
@@ -237,14 +238,12 @@ def get_linked_service_info(linked_service_resource:APILinkedServiceResource)->O
         LinkedServiceType.Synapse,
         LinkedServiceType.OnPrimeMSSQL]:
 
-        info = get_mssql_processed_linked_service(mssql_linked_service_resource=linked_service_resource,\
-                                                  linked_service_parameter_value=linked_service_parameter_value)
+        info = get_mssql_processed_linked_service(mssql_linked_service_properties=linked_service_resource.properties)
 
         
     elif linked_service_type == LinkedServiceType.Oracle:
 
-        info = get_oracle_processed_linked_service(oracle_linked_service_resource=linked_service_resource,\
-                                         linked_service_parameter_value=linked_service_parameter_value)
+        info = get_oracle_processed_linked_service(oracle_linked_service_properties=linked_service_resource.properties)
         
 
     elif linked_service_type == LinkedServiceType.Blob:
@@ -286,57 +285,85 @@ def get_linked_service_info(linked_service_resource:APILinkedServiceResource)->O
 
     elif linked_service_type==LinkedServiceType.MongoDB:
 
-        info = get_mongodb_processed_linked_service(mongodb_linked_service_resource=linked_service_resource,\
-                                                    linked_service_parameter_value=linked_service_parameter_value)
+        info = get_mongodb_processed_linked_service(mongodb_linked_service_properties=linked_service_resource.properties)
 
     return info
 
-def get_mssql_processed_linked_service(mssql_linked_service_resource:APILinkedServiceResource,\
-                                       linked_service_parameter_value:str)->Optional[ProcessLinkedService]:
+def get_mssql_processed_linked_service(mssql_linked_service_properties:Munch)->Optional[ProcessLinkedService]:
+
+    linked_service_parameter_value = "@{linkedService()"
+
     connection_string:str = None
 
     # for old version of sql server linked service
 
-    if has_field(mssql_linked_service_resource.properties,"connection_string"):
-        connection_string = mssql_linked_service_resource.properties.connection_string
-    else:
+    if has_field(mssql_linked_service_properties,"connection_string"):
+        connection_string = mssql_linked_service_properties.connection_string
+    elif has_field(mssql_linked_service_properties,"typeProperties") and\
+        has_field(mssql_linked_service_properties.typeProperties,"connectionString"):
         # for new version of sql server linked service
-        connection_string = mssql_linked_service_resource.properties.typeProperties.connectionString
+
+        connection_string = mssql_linked_service_properties.typeProperties.connectionString
 
     #if it is a dict type , it mean the linked service connection string is in azure key-vault (we are going to ignore it)
         
-    if not isinstance(connection_string,str):
+    if connection_string is not None and \
+        not isinstance(connection_string,str):
+        return None 
+       
+    host_str:str = None
+
+    database_str:str = None
+
+    if connection_string is None:
+
+        if not has_field(mssql_linked_service_properties,"typeProperties"):
+            return None
+        
+        if not has_field(mssql_linked_service_properties.typeProperties,"server"):
+            return None
+
+        host_str = mssql_linked_service_properties.typeProperties.server
+
+        if not has_field(mssql_linked_service_properties.typeProperties,"database"):
+            return None
+        
+        database_str = mssql_linked_service_properties.typeProperties.database
+
+    else:
+        connection_properties = get_connection_properties(connection_str=connection_string)
+
+        host_str = connection_properties["datasource"]
+
+        # to handle tcp:host,port format
+
+        if "tcp:" in host_str:
+            host_str = host_str.replace("tcp:","").split(",")[0]
+
+        database_str = connection_properties["initialcatalog"]
+
+    if host_str is None or \
+        database_str is None:
+
         return None
     
-    connection_properties = get_connection_properties(connection_str=connection_string)
-
-    host = connection_properties["datasource"]
-
     host_parameter_type = ParameterType.Static
 
-    # to handle tcp:host,port format
-
-    if "tcp:" in host:
-        host = host.replace("tcp:","").split(",")[0]
-
-
-    if linked_service_parameter_value in host:
+    if linked_service_parameter_value in host_str:
         host_parameter_type = ParameterType.Expression
 
     host = Parameter(
-        value=host,\
+        value=host_str,\
         parameter_type=host_parameter_type
     )
 
-    database = connection_properties["initialcatalog"]
-
     database_parameter_type = ParameterType.Static
 
-    if linked_service_parameter_value in database:
+    if linked_service_parameter_value in database_str:
         database_parameter_type = ParameterType.Expression
 
     database = Parameter(
-        value=database,\
+        value=database_str,\
         parameter_type=database_parameter_type
     )
 
@@ -347,9 +374,10 @@ def get_mssql_processed_linked_service(mssql_linked_service_resource:APILinkedSe
 
 
 
-def get_oracle_processed_linked_service(oracle_linked_service_resource:APILinkedServiceResource,\
-                              linked_service_parameter_value:str)->Optional[ProcessLinkedService]:
-        
+def get_oracle_processed_linked_service(oracle_linked_service_properties:Munch)->Optional[ProcessLinkedService]:
+
+    linked_service_parameter_value = "@{linkedService()"
+
     connection_string:str = None
 
     # with key values: host , servicename , sid
@@ -358,15 +386,21 @@ def get_oracle_processed_linked_service(oracle_linked_service_resource:APILinked
     is_processed = False
 
     if not is_processed and\
-        (has_field(oracle_linked_service_resource.properties,"server")
-         or has_field(oracle_linked_service_resource.properties.typeProperties,"server")):
-
+        (
+            has_field(oracle_linked_service_properties,"server")
+            or 
+            (
+                has_field(oracle_linked_service_properties,"typeProperties") and\
+                has_field(oracle_linked_service_properties.typeProperties,"server")
+            )
+         ):
+        
         server_info:str = None
 
-        if has_field(oracle_linked_service_resource.properties,"server"):
-            server_info = oracle_linked_service_resource.properties.server
+        if has_field(oracle_linked_service_properties,"server"):
+            server_info = oracle_linked_service_properties.server
         else:
-            server_info = oracle_linked_service_resource.properties.typeProperties.server
+            server_info = oracle_linked_service_properties.typeProperties.server
 
         if server_info is not None:
         
@@ -394,27 +428,27 @@ def get_oracle_processed_linked_service(oracle_linked_service_resource:APILinked
             else:
                 # easy connect format. Example host:port/serviceName 
                 connection_properties = dict()
-                connection_properties["host"] = server_info.split(":")[0]
-                connection_properties["servicename"] = server_info.split("/")[1]
+                connection_properties["host"] = server_info.split(":")[0].strip()
+                connection_properties["servicename"] = server_info.split("/")[1].strip()
 
             is_processed = True
 
-
     if not is_processed and \
-        has_field(oracle_linked_service_resource.properties,"typeProperties") and \
-        has_field(oracle_linked_service_resource.properties.typeProperties,"connectionString"):
+        has_field(oracle_linked_service_properties,"typeProperties") and \
+        has_field(oracle_linked_service_properties.typeProperties,"connectionString"):
         # for new version of oracle server linked service
-        connection_string = oracle_linked_service_resource.properties.typeProperties.connectionString
+        connection_string = oracle_linked_service_properties.typeProperties.connectionString
+
         
         is_processed = connection_string is not None
-        
+    
     # for old version of oracle linked service
     if not is_processed and \
-        has_field(oracle_linked_service_resource.properties,"connection_string"):
-        connection_string = oracle_linked_service_resource.properties.connection_string
+        has_field(oracle_linked_service_properties,"connection_string"):
+        connection_string = oracle_linked_service_properties.connection_string
 
         is_processed = connection_string is not None
-
+    
      #if connection_string it is a dict type , it mean the linked service connection string is in azure key-vault (we are going to ignore it)
 
     if connection_properties is None and \
@@ -459,29 +493,28 @@ def get_oracle_processed_linked_service(oracle_linked_service_resource:APILinked
             database=database
         )
 
-def get_mongodb_processed_linked_service(mongodb_linked_service_resource:APILinkedServiceResource,\
-                                       linked_service_parameter_value:str)->Optional[ProcessLinkedService]:
+def get_mongodb_processed_linked_service(mongodb_linked_service_properties:Munch)->Optional[ProcessLinkedService]:
     
+    linked_service_parameter_value = "@{linkedService()"
+
     host = None
 
     database = None
-
-    connection_properties = mongodb_linked_service_resource.properties
 
     connection_string = None
 
     host_str = None
 
-    if has_field(connection_properties,"connection_string") and\
-    connection_properties.connection_string is not None:
+    if has_field(mongodb_linked_service_properties,"connection_string") and\
+    mongodb_linked_service_properties.connection_string is not None:
         
-        connection_string = connection_properties.connection_string
+        connection_string = mongodb_linked_service_properties.connection_string
 
     # add support for MongoDbV2
 
-    elif has_field(connection_properties,"typeProperties"):
+    elif has_field(mongodb_linked_service_properties,"typeProperties"):
 
-        type_properties = connection_properties.typeProperties
+        type_properties = mongodb_linked_service_properties.typeProperties
 
         if has_field(type_properties,"connectionString") and\
         type_properties.connectionString is not None:
@@ -505,15 +538,15 @@ def get_mongodb_processed_linked_service(mongodb_linked_service_resource:APILink
         parameter_type = ParameterType.Expression
 
     host = Parameter(
-        value=host,\
+        value=host_str,\
         parameter_type=parameter_type
     )
         
-    if has_field(connection_properties,"database") and\
-        connection_properties.database is not None:
+    if has_field(mongodb_linked_service_properties,"database") and\
+        mongodb_linked_service_properties.database is not None:
         
         database = create_parameter(
-            parameter_value= connection_properties.database
+            parameter_value= mongodb_linked_service_properties.database
         )
         
     return DatabaseLinkedService(

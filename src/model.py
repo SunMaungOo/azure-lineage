@@ -16,6 +16,7 @@ from plugin import (
     LineagePlugin,
     LineageWriterPlugin
 )
+from munch import Munch
 
 class DatasetType(Enum):
     Oracle = 1
@@ -108,14 +109,14 @@ class APIDatasetResource:
     linked_service_name:str
     azure_data_type:str
     #dataset properties
-    properties:Dict[str,Any]
+    properties:Munch
 
 @dataclass
 class APILinkedServiceResource:
     linked_service_name:str
     azure_data_type:str
     #linked service properties
-    properties:Dict[str,Any]
+    properties:Munch
 
 
 @dataclass

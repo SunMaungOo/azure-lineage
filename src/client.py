@@ -122,7 +122,7 @@ class DataFactoryClient:
                     dataset_name=dataset_resource.name,\
                     linked_service_name=dataset_resource.properties.linked_service_name.reference_name,\
                     azure_data_type=dataset_resource.properties.type,\
-                    properties=dataset_resource.properties
+                    properties=Munch.fromDict(dataset_resource.properties)
                 )
                 for dataset_resource in self.client.datasets.list_by_factory(resource_group_name=self.resource_group_name,\
                                                                             factory_name=self.data_factory_name)
@@ -136,7 +136,7 @@ class DataFactoryClient:
                 APILinkedServiceResource(
                     linked_service_name=linked_service_resource.name,
                     azure_data_type=linked_service_resource.properties.type,
-                    properties=linked_service_resource.properties
+                    properties=Munch.fromDict(linked_service_resource.properties)
                 )
                 for linked_service_resource in self.client.linked_services.list_by_factory(resource_group_name=self.resource_group_name,\
                                                                                            factory_name=self.data_factory_name)
@@ -334,7 +334,7 @@ class SynapseClient:
                         dataset_name=dataset_resource.name,\
                         linked_service_name=linked_service_name,\
                         azure_data_type=azure_data_type,\
-                        properties=dataset_resource.properties
+                        properties=Munch.fromDict(dataset_resource.properties)
                     )
                 )
             
@@ -350,7 +350,7 @@ class SynapseClient:
                 APILinkedServiceResource(
                     linked_service_name=linked_service_resource.name,
                     azure_data_type=linked_service_resource.properties.type,
-                    properties=linked_service_resource.properties
+                    properties=Munch.fromDict(linked_service_resource.properties)
                 )
                 for linked_service_resource in self.client.linked_service.get_linked_services_by_workspace() 
             ]
@@ -516,7 +516,6 @@ class FallbackDataFactoryClient:
 
     def get_linked_service(self)->Optional[List[APILinkedServiceResource]]:
        
-       
        url = (
             f"https://management.azure.com/subscriptions/{self.subscription_id}"
             f"/resourceGroups/{self.resource_group_name}"
@@ -529,7 +528,7 @@ class FallbackDataFactoryClient:
        try:
            
            response = requests.get(url=url, headers=headers)
-
+           
            return [
                APILinkedServiceResource(linked_service_name=linked_service_resource["name"],\
                                             azure_data_type=linked_service_resource["properties"]["type"],\
