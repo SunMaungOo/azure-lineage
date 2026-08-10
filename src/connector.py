@@ -254,17 +254,21 @@ def get_linked_service_info(linked_service_resource:APILinkedServiceResource)->O
 
             if has_field(linked_service_resource.properties,"connection_string"):
 
-                connection_properties = get_connection_properties(connection_str=linked_service_resource.properties.connection_string)
+                connection_str = linked_service_resource.properties.connection_string
+
+                if connection_str is not None:
+                    connection_properties = get_connection_properties(connection_str=linked_service_resource.properties.connection_string)
+                    
             elif has_field(linked_service_resource.properties.typeProperties,"connectionString"):
                 
                 connection_properties = get_connection_properties(connection_str=linked_service_resource.properties.typeProperties.connectionString)
 
-            
 
-            info = BlobLinkedService(
-                url=Parameter(value=connection_properties["accountname"],\
-                              parameter_type=ParameterType.Static)
-            )
+            if connection_properties is not None:
+                info = BlobLinkedService(
+                    url=Parameter(value=connection_properties["accountname"],\
+                                parameter_type=ParameterType.Static)
+                )
 
         elif azure_data_type == "AzureBlobFS":
 
