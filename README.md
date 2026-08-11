@@ -65,6 +65,12 @@ The following environment variables are required or optional when running the ex
 | `IS_DEBUG`                             | Whether to write the complete lineage information to debugging plugin                                                             | `false`        |
 
 
+## Permissions
+
+Before running the extractor, ensure the Azure Service Principal or Managed Identity associated with your `AZURE_CLIENT_ID` has been granted the necessary permissions:
+
+- **Azure Data Factory:** Requires the **Reader** role on the Data Factory resource.
+- **Azure Synapse Analytics:** Requires the **Synapse Artifact User** role in Azure Synapse RBAC.
 
 
 ## How to Use
